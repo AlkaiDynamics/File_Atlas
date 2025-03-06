@@ -1,0 +1,12 @@
+# This sample TOML flags usages of the last_purchase column on the customers table
+# and usages of the users table. The TOML spec is here: https://toml.io/en/
+
+# [[tables]]
+# name = "customers"
+# [[tables.columns]]
+# name = "last_purchase"
+# reason = "This column has missing data starting from 12/01/22"
+
+# [[tables]]
+# name = "users"
+# reason = "This table is deprecated. We should be using either customers or free_users instead."

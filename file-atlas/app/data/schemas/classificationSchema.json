@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)*$",
+      "description": "Classification ID (e.g., 1.0, 2.1, 3.1.1)"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["root", "folder", "file"],
+      "description": "Node type"
+    },
+    "subtype": {
+      "type": "string",
+      "enum": ["standard", "protected", "restricted", "pdf", "doc", "xls", "img"],
+      "description": "Specific type classification"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Node name (file or folder name)"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?\\s*(B|KB|MB|GB|TB)$",
+          "description": "File size with unit"
+        },
+        "modified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification date"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation date"
+        },
+        "permissions": {
+          "type": "string",
+          "description": "File permissions"
+        }
+      },
+      "required": ["size", "modified"],
+      "additionalProperties": false
+    },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#" },
+      "description": "Child nodes for folders"
+    }
+  },
+  "required": ["id", "type", "name"],
+  "additionalProperties": false
+}

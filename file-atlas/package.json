@@ -1,0 +1,53 @@
+{
+  "name": "file-atlas",
+  "version": "1.0.0",
+  "description": "A comprehensive Electron-based application for visualizing Windows file system structures",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "jest",
+    "build": "electron-builder build --win --mac --linux",
+    "build:win": "electron-builder build --win",
+    "build:mac": "electron-builder build --mac",
+    "build:linux": "electron-builder build --linux",
+    "test:performance": "jest performance.test.js",
+    "test:uat": "jest uat.test.js"
+  },
+  "dependencies": {
+    "d3": "^7.0.0",
+    "electron": "^28.0.0",
+    "winston": "^3.10.0",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.6.0",
+    "electron-builder": "^24.6.0",
+    "lighthouse": "^11.0.0",
+    "puppeteer": "^21.0.0",
+    "chrome-launcher": "^1.0.0"
+  },
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.fileatlas.app",
+    "productName": "File Atlas",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "app/assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "app/assets/icon.icns"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "app/assets/icon.png"
+    }
+}
