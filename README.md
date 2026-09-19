@@ -29,7 +29,7 @@ A cryptographic content hash is an extremely strong identity signal, but File At
 
 ## Run
 
-Prerequisites: Rust 1.82+, Node.js 20+, and the normal Tauri prerequisites for your platform.
+Prerequisites: Rust 1.85+, Node.js 20+, and the normal Tauri prerequisites for your platform.
 
 ```bash
 npm install
