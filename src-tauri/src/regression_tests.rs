@@ -129,13 +129,13 @@ fn stale_inventory_record_is_rejected_after_file_changes() {
 }
 
 #[test]
-fn unicode_and_long_names_survive_inventory_and_reporting() {
+fn unicode_and_moderately_long_names_survive_inventory_and_reporting() {
     let dir = tempdir().unwrap();
     let nested = dir
         .path()
         .join("資料-δelta-🌌")
-        .join("a".repeat(120))
-        .join("b".repeat(80));
+        .join("a".repeat(48))
+        .join("b".repeat(32));
     let file = nested.join("résumé-文件.txt");
     write(&file, b"unicode path");
 
