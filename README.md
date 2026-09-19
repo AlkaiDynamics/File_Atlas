@@ -76,3 +76,18 @@ This is intentionally the boring/correct renderer. A future infinite-canvas tree
 ## Validation
 
 See [TESTING.md](TESTING.md) for the automated adversarial suite, manual Windows torture pass, and release gate.
+
+
+## Dedupe-first workflow
+
+Exact dedupe is the priority for v2. After a scan, File Atlas opens on the **WASTE** lens and supports:
+
+- branch-to-duplicate drilldown: click a swollen directory branch to scope exact duplicate groups to that location;
+- file-family filters for media, documents, archives, installers, developer files, and other content;
+- minimum reclaimable-byte and physical-copy thresholds;
+- path text filtering;
+- path-sensitivity filtering for user-looking versus obvious system/application locations;
+- explicit **EXACT · BYTE VERIFIED** evidence labels;
+- explicit **REFERENCE** semantics: the reference path is only the physical copy used to anchor reclaimable-byte accounting and is never a deletion recommendation.
+
+The objective is to make manual pruning faster and more confident before any destructive cleanup executor is introduced.
