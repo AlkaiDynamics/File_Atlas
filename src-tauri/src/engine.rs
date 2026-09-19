@@ -358,6 +358,7 @@ mod tests {
             allocated_bytes,
             modified_ms: 0,
             modified_ns: 0,
+            change_stamp: 0,
             identity: identity.into(),
             link_count: 2,
             extension: ".bin".into(),
