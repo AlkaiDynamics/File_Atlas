@@ -178,7 +178,7 @@ function renderAtlas() {
   if (!state.report) return;
   const explanations = {
     space: "Tile area = allocated physical bytes. Hardlinked physical files are counted once.",
-    waste: "Tile area = byte-verified redundant physical allocation. Folder-name heuristics do not appear here.",
+    waste: "Visual mass = byte-verified redundant physical allocation. Hardlinked waste is shared across its alias paths; all links to a redundant physical copy must be resolved before those blocks are actually freed.",
     structure: "Tile area = logical file size across paths. Useful for understanding huge trees even when they are not waste.",
   };
   ui.lensExplanation.textContent = explanations[state.lens];
@@ -257,7 +257,9 @@ function renderDuplicates(groups) {
     const referenceMember = group.members.find((member) => member.path === group.keepPath);
     const referenceIdentity = referenceMember?.identity;
     const representativeByIdentity = new Map();
+    const countByIdentity = new Map();
     for (const member of [...group.members].sort((a, b) => a.path.localeCompare(b.path))) {
+      countByIdentity.set(member.identity, (countByIdentity.get(member.identity) || 0) + 1);
       if (!representativeByIdentity.has(member.identity)) {
         representativeByIdentity.set(member.identity, member.path);
       }
@@ -278,6 +280,10 @@ function renderDuplicates(groups) {
         kind = "hardlink-alias";
         label = "HARDLINK ALIAS";
         suffix = " · same physical file as reference · 0 B direct recovery";
+      } else if ((countByIdentity.get(member.identity) || 0) > 1) {
+        kind = "linked-copy";
+        label = "LINKED PHYSICAL COPY";
+        suffix = ` · ${bytes(member.allocatedBytes)} physical allocation across ${countByIdentity.get(member.identity)} paths · no single path frees it`;
       }
       return `<li class="${kind}"><span class="member-kind">${label}</span><span>${escapeHtml(member.path)}</span><small>${suffix}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</small></li>`;
     }).join("");
