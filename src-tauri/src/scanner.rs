@@ -110,14 +110,14 @@ fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Erro
     }
 
     let logical_bytes = metadata.len();
-    let modified_ms = metadata
+    let modified_ns = metadata
         .modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
+        .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
         .unwrap_or(0);
-    let (identity, allocated_bytes, link_count) = physical_info(path, &metadata)
-        .unwrap_or_else(|_| (path.to_string_lossy().to_string(), logical_bytes, 1));
+    let modified_ms = modified_ns / 1_000_000;
+    let (identity, allocated_bytes, link_count) = physical_info(path, &metadata)?;
     let relative_path = path
         .strip_prefix(root)
         .unwrap_or(path)
@@ -135,6 +135,7 @@ fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Erro
         logical_bytes,
         allocated_bytes,
         modified_ms,
+        modified_ns,
         identity,
         link_count,
         extension,
@@ -272,7 +273,7 @@ where
     let paths: Vec<PathBuf> = file_ids
         .par_iter()
         .filter_map(|fid| resolve_mft_path(*fid, &nodes, &drive_root))
-        .filter(|path| normalize_windows_path(path).starts_with(&root_norm))
+        .filter(|path| is_within_windows_root(path, &root_norm))
         .collect();
 
     let total = paths.len();
@@ -324,4 +325,11 @@ fn resolve_mft_path(fid: u64, nodes: &HashMap<u64, MftNode>, drive_root: &Path) 
 #[cfg(windows)]
 fn normalize_windows_path(path: &Path) -> String {
     path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
+}
+
+#[cfg(windows)]
+fn is_within_windows_root(path: &Path, normalized_root: &str) -> bool {
+    let path = normalize_windows_path(path);
+    let root = normalized_root.trim_end_matches('\\');
+    path == root || path.starts_with(&format!("{root}\\"))
 }
