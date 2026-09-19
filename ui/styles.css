@@ -84,7 +84,7 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .card small { color: var(--muted); }
 .path-list { margin: 9px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
 .path-list li { color: #aab7c6; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
-.path-list .keep::before { content: "KEEP · "; color: var(--good); font-weight: 800; }
+.path-list .reference::before { content: "REFERENCE · "; color: var(--good); font-weight: 800; }
 .path-list .redundant::before { content: "COPY · "; color: var(--waste); font-weight: 800; }
 .signal-confidence { font-size: 10px; color: var(--warning); text-transform: uppercase; letter-spacing: .08em; }
 .bar-list { display: grid; gap: 10px; margin-top: 14px; }
@@ -115,3 +115,11 @@ footer { margin: 26px 0 4px; color: #607085; text-align: center; font-size: 11px
   .dedupe-controls { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
   .dedupe-controls .path-filter { grid-column: 1 / -1; }
 }
+
+.dedupe-note { margin: 10px 0 0; color: #95a4b7; font-size: 11px; line-height: 1.5; }
+.duplicate-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.sensitivity, .evidence-flag { display: inline-flex; align-items: center; min-height: 22px; padding: 4px 7px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.sensitivity.user { color: #a7f3d0; border: 1px solid rgba(74,222,128,.24); background: rgba(74,222,128,.08); }
+.sensitivity.appdata { color: #fde68a; border: 1px solid rgba(251,191,36,.25); background: rgba(251,191,36,.08); }
+.sensitivity.system { color: #fecdd3; border: 1px solid rgba(251,113,133,.32); background: rgba(251,113,133,.11); }
+.evidence-flag { color: #bae6fd; border: 1px solid rgba(56,189,248,.24); background: rgba(56,189,248,.08); }
