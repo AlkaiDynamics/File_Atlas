@@ -120,7 +120,12 @@ where
                 return None;
             }
             if let Some(full_hash) = cache
-                .get(&file.identity, file.logical_bytes, file.modified_ns)
+                .get(
+                    &file.identity,
+                    file.logical_bytes,
+                    file.modified_ns,
+                    file.change_stamp,
+                )
                 .and_then(|entry| entry.full_hash)
             {
                 return record_is_current(file).then_some((*idx, full_hash));
