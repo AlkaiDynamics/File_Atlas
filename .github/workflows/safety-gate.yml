@@ -1,11 +1,12 @@
 name: File Atlas safety gate
 
 on:
-  push:
-    branches:
-      - rebuild/storage-forensics-v2
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: file-atlas-safety-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
