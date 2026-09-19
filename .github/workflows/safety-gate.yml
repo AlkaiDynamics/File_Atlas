@@ -20,8 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Check renderer JavaScript
-        run: node --check ui/app.js
+      - name: Check renderer JavaScript and interactions
+        run: npm run check:ui
       - name: Validate JSON configuration
         shell: bash
         run: |
