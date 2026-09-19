@@ -106,7 +106,7 @@ pub struct ScanSummary {
     pub duplicate_paths: usize,
     pub hardlink_aliases: usize,
     pub unreadable_entries: usize,
-    pub elapsed_ms: u128,
+    pub elapsed_ms: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
