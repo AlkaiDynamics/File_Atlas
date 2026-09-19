@@ -117,12 +117,21 @@
               <option value="5">5+</option>
             </select>
           </label>
+          <label>
+            <span>Path sensitivity</span>
+            <select id="sensitivityFilter">
+              <option value="all">All locations</option>
+              <option value="user">User-looking only</option>
+              <option value="sensitive">Sensitive paths only</option>
+            </select>
+          </label>
           <label class="path-filter">
             <span>Path contains</span>
             <input id="pathFilter" type="text" placeholder="folder, drive, filename…" />
           </label>
           <button id="clearDedupeFilters" class="secondary compact">Clear filters</button>
         </div>
+        <p class="dedupe-note">REFERENCE identifies the physical copy used for waste accounting only. It is not a deletion recommendation. Location sensitivity is heuristic and should be treated as an extra warning, not proof of safety.</p>
         <div id="dedupeScope" class="dedupe-scope hidden"></div>
         <div id="duplicateGroups" class="stack"></div>
       </article>
