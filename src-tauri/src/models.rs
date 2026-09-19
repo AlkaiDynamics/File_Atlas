@@ -10,6 +10,8 @@ pub struct FileRecord {
     pub modified_ms: u64,
     #[serde(skip_serializing)]
     pub modified_ns: u64,
+    #[serde(skip_serializing)]
+    pub change_stamp: i64,
     pub identity: String,
     pub link_count: u64,
     pub extension: String,
