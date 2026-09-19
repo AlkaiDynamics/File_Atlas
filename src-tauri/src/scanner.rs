@@ -261,12 +261,16 @@ where
     for (index, item) in mft.iter().enumerate() {
         match item {
             Ok(entry) => {
+                let fid = entry.fid;
+                let parent_fid = entry.parent_fid;
+                let is_dir = entry.is_dir();
+                let name = entry.file_name;
                 nodes.insert(
-                    entry.fid,
+                    fid,
                     MftNode {
-                        parent_fid: entry.parent_fid,
-                        name: entry.file_name,
-                        is_dir: entry.is_dir(),
+                        parent_fid,
+                        name,
+                        is_dir,
                     },
                 );
                 if index > 0 && index % 100_000 == 0 {
