@@ -41,7 +41,13 @@ where
                 .map_err(|memory_error| format!("Unable to initialize hash cache: {memory_error}"))?
         }
     };
-    let duplicates = find_exact_duplicates(&mut inventory.files, &cache, &progress);
+    let duplicate_analysis = find_exact_duplicates(&mut inventory.files, &cache, &progress);
+    if duplicate_analysis.incomplete {
+        inventory.warnings.push(
+            "Duplicate verification was incomplete because one or more candidate files changed or became unreadable during analysis. Affected candidates were excluded from exact-duplicate conclusions.".into(),
+        );
+    }
+    let duplicates = duplicate_analysis.groups;
 
     progress(ScanProgress {
         phase: "aggregate".into(),
