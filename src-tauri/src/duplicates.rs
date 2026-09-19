@@ -1,7 +1,7 @@
 use crate::cache::HashCache;
 use crate::models::{DuplicateGroup, DuplicateMember, FileRecord, ScanProgress};
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -339,15 +339,39 @@ fn mark_reclaimable(group: &DuplicateGroup, files: &mut [FileRecord]) {
         .iter()
         .find(|member| member.path == group.keep_path)
         .map(|member| member.identity.as_str());
-    let mut marked_identities = HashSet::new();
+
+    let mut redundant: HashMap<String, Vec<&DuplicateMember>> = HashMap::new();
     for member in &group.members {
-        if Some(member.identity.as_str()) == keep_identity
-            || !marked_identities.insert(member.identity.clone())
-        {
+        if Some(member.identity.as_str()) != keep_identity {
+            redundant
+                .entry(member.identity.clone())
+                .or_default()
+                .push(member);
+        }
+    }
+
+    for members in redundant.values_mut() {
+        members.sort_by(|a, b| a.path.cmp(&b.path));
+        let allocated = members
+            .first()
+            .map(|member| member.allocated_bytes)
+            .unwrap_or(0);
+        let count = members.len() as u64;
+        if count == 0 {
             continue;
         }
-        if let Some(file) = files.iter_mut().find(|file| file.path == member.path) {
-            file.reclaimable_bytes = file.allocated_bytes;
+
+        // A hardlinked physical copy is reclaimable only when its aliases are
+        // collectively resolved. Split its visual attribution across aliases so
+        // directory WASTE totals remain additive without pretending one alias
+        // alone would free the entire allocation.
+        let base = allocated / count;
+        let remainder = allocated % count;
+        for (index, member) in members.iter().enumerate() {
+            if let Some(file) = files.iter_mut().find(|file| file.path == member.path) {
+                file.reclaimable_bytes =
+                    base + u64::from((index as u64) < remainder);
+            }
         }
     }
 }
