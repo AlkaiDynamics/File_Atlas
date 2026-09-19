@@ -70,11 +70,14 @@ fn hardlinks_alone_do_not_create_reclaimable_duplicate_waste() {
     write(&source, b"one physical file");
     fs::hard_link(&source, &alias).unwrap();
 
+    let inventory = collect_files(dir.path(), &silent).unwrap();
+    let one_physical_allocation = inventory.files[0].allocated_bytes;
     let report = scan_root(dir.path(), silent).unwrap();
     assert_eq!(report.summary.files_scanned, 2);
+    assert_eq!(report.summary.hardlink_aliases, 1);
     assert!(report.duplicates.is_empty());
     assert_eq!(report.summary.reclaimable_bytes, 0);
-    assert!(report.summary.allocated_bytes <= report.summary.logical_bytes);
+    assert_eq!(report.summary.allocated_bytes, one_physical_allocation);
 }
 
 #[test]
