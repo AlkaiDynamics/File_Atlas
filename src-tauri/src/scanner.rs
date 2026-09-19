@@ -25,7 +25,7 @@ where
         return Err(format!("Scan root is not a directory: {}", root.display()));
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "mft-fast"))]
     {
         match collect_windows_mft(root, progress) {
             Ok(inventory) => return Ok(inventory),
@@ -208,7 +208,7 @@ fn is_reparse_or_symlink(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "mft-fast"))]
 #[derive(Clone)]
 struct MftNode {
     parent_fid: u64,
@@ -216,7 +216,7 @@ struct MftNode {
     is_dir: bool,
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "mft-fast"))]
 fn collect_windows_mft<F>(root: &Path, progress: &F) -> Result<ScanInventory, String>
 where
     F: Fn(ScanProgress) + Sync,
@@ -297,7 +297,7 @@ where
     })
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "mft-fast"))]
 fn resolve_mft_path(fid: u64, nodes: &HashMap<u64, MftNode>, drive_root: &Path) -> Option<PathBuf> {
     let mut current = fid;
     let mut parts: Vec<OsString> = Vec::new();
@@ -322,12 +322,12 @@ fn resolve_mft_path(fid: u64, nodes: &HashMap<u64, MftNode>, drive_root: &Path) 
     Some(path)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "mft-fast"))]
 fn normalize_windows_path(path: &Path) -> String {
     path.to_string_lossy().replace('/', "\\").to_ascii_lowercase()
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "mft-fast"))]
 fn is_within_windows_root(path: &Path, normalized_root: &str) -> bool {
     let path = normalize_windows_path(path);
     let root = normalized_root.trim_end_matches('\\');
