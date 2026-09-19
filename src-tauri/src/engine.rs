@@ -86,7 +86,10 @@ where
             duplicate_paths,
             hardlink_aliases,
             unreadable_entries: inventory.unreadable,
-            elapsed_ms: started.elapsed().as_millis(),
+            elapsed_ms: started
+                .elapsed()
+                .as_millis()
+                .min(u64::MAX as u128) as u64,
         },
         directory_tree,
         hotspots,
