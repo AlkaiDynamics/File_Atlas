@@ -31,7 +31,16 @@ where
     // Stable ordering makes physical-byte attribution deterministic when one
     // physical file has hardlink paths in multiple directories.
     inventory.files.sort_by(|a, b| a.path.cmp(&b.path));
-    let cache = HashCache::open().map_err(|e| format!("Unable to open hash cache: {e}"))?;
+    let cache = match HashCache::open() {
+        Ok(cache) => cache,
+        Err(error) => {
+            inventory.warnings.push(format!(
+                "Persistent hash cache unavailable; using an in-memory cache for this scan: {error}"
+            ));
+            HashCache::memory()
+                .map_err(|memory_error| format!("Unable to initialize hash cache: {memory_error}"))?
+        }
+    };
     let duplicates = find_exact_duplicates(&mut inventory.files, &cache, &progress);
 
     progress(ScanProgress {
