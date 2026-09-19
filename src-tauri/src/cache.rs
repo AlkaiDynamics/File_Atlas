@@ -19,8 +19,7 @@ impl HashCache {
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let conn = Connection::open(path)?;
-        Self::from_connection(conn)
+        Self::from_connection(Connection::open(path)?)
     }
 
     pub fn memory() -> rusqlite::Result<Self> {
@@ -31,29 +30,36 @@ impl HashCache {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS hash_cache_v2 (
+            "CREATE TABLE IF NOT EXISTS hash_cache_v3 (
                 identity TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 modified_ns INTEGER NOT NULL,
+                change_stamp INTEGER NOT NULL,
                 prehash TEXT,
                 full_hash TEXT,
-                PRIMARY KEY(identity, size, modified_ns)
+                PRIMARY KEY(identity, size, modified_ns, change_stamp)
             );
-            CREATE INDEX IF NOT EXISTS idx_hash_cache_v2_lookup
-            ON hash_cache_v2(identity, size, modified_ns);",
+            CREATE INDEX IF NOT EXISTS idx_hash_cache_v3_lookup
+            ON hash_cache_v3(identity, size, modified_ns, change_stamp);",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
 
-    pub fn get(&self, identity: &str, size: u64, modified_ns: u64) -> Option<CachedHashes> {
+    pub fn get(
+        &self,
+        identity: &str,
+        size: u64,
+        modified_ns: u64,
+        change_stamp: i64,
+    ) -> Option<CachedHashes> {
         self.conn
             .lock()
             .query_row(
-                "SELECT prehash, full_hash FROM hash_cache_v2
-                 WHERE identity = ?1 AND size = ?2 AND modified_ns = ?3",
-                params![identity, size as i64, modified_ns as i64],
+                "SELECT prehash, full_hash FROM hash_cache_v3
+                 WHERE identity = ?1 AND size = ?2 AND modified_ns = ?3 AND change_stamp = ?4",
+                params![identity, size as i64, modified_ns as i64, change_stamp],
                 |row| {
                     Ok(CachedHashes {
                         prehash: row.get(0)?,
@@ -66,13 +72,26 @@ impl HashCache {
             .flatten()
     }
 
-    pub fn put_prehash(&self, identity: &str, size: u64, modified_ns: u64, prehash: &str) {
+    pub fn put_prehash(
+        &self,
+        identity: &str,
+        size: u64,
+        modified_ns: u64,
+        change_stamp: i64,
+        prehash: &str,
+    ) {
         let _ = self.conn.lock().execute(
-            "INSERT INTO hash_cache_v2(identity, size, modified_ns, prehash)
-             VALUES(?1, ?2, ?3, ?4)
-             ON CONFLICT(identity, size, modified_ns)
+            "INSERT INTO hash_cache_v3(identity, size, modified_ns, change_stamp, prehash)
+             VALUES(?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(identity, size, modified_ns, change_stamp)
              DO UPDATE SET prehash = excluded.prehash",
-            params![identity, size as i64, modified_ns as i64, prehash],
+            params![
+                identity,
+                size as i64,
+                modified_ns as i64,
+                change_stamp,
+                prehash
+            ],
         );
     }
 
@@ -81,15 +100,25 @@ impl HashCache {
         identity: &str,
         size: u64,
         modified_ns: u64,
+        change_stamp: i64,
         prehash: &str,
         full_hash: &str,
     ) {
         let _ = self.conn.lock().execute(
-            "INSERT INTO hash_cache_v2(identity, size, modified_ns, prehash, full_hash)
-             VALUES(?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(identity, size, modified_ns)
+            "INSERT INTO hash_cache_v3(
+                identity, size, modified_ns, change_stamp, prehash, full_hash
+             )
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(identity, size, modified_ns, change_stamp)
              DO UPDATE SET prehash = excluded.prehash, full_hash = excluded.full_hash",
-            params![identity, size as i64, modified_ns as i64, prehash, full_hash],
+            params![
+                identity,
+                size as i64,
+                modified_ns as i64,
+                change_stamp,
+                prehash,
+                full_hash
+            ],
         );
     }
 }
@@ -121,24 +150,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nanosecond_cache_keys_do_not_collide() {
+    fn nanosecond_and_change_stamp_cache_keys_do_not_collide() {
         let cache = HashCache::memory().unwrap();
-        cache.put_full_hash("identity", 123, 1_000_000_001, "pre-a", "full-a");
-        cache.put_full_hash("identity", 123, 1_000_000_002, "pre-b", "full-b");
+        cache.put_full_hash(
+            "identity",
+            123,
+            1_000_000_001,
+            10,
+            "pre-a",
+            "full-a",
+        );
+        cache.put_full_hash(
+            "identity",
+            123,
+            1_000_000_001,
+            11,
+            "pre-b",
+            "full-b",
+        );
+        cache.put_full_hash(
+            "identity",
+            123,
+            1_000_000_002,
+            11,
+            "pre-c",
+            "full-c",
+        );
 
         assert_eq!(
             cache
-                .get("identity", 123, 1_000_000_001)
+                .get("identity", 123, 1_000_000_001, 10)
                 .and_then(|entry| entry.full_hash)
                 .as_deref(),
             Some("full-a")
         );
         assert_eq!(
             cache
-                .get("identity", 123, 1_000_000_002)
+                .get("identity", 123, 1_000_000_001, 11)
                 .and_then(|entry| entry.full_hash)
                 .as_deref(),
             Some("full-b")
+        );
+        assert_eq!(
+            cache
+                .get("identity", 123, 1_000_000_002, 11)
+                .and_then(|entry| entry.full_hash)
+                .as_deref(),
+            Some("full-c")
         );
     }
 }
