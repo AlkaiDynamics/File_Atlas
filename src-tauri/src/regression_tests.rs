@@ -402,3 +402,31 @@ fn replacement_with_same_size_and_timestamp_is_rejected_by_identity() {
         "a path whose physical identity changed must be rejected until a fresh inventory"
     );
 }
+
+
+#[test]
+fn same_identity_rewrite_with_restored_mtime_is_rejected() {
+    let dir = tempdir().unwrap();
+    let a = dir.path().join("a.bin");
+    let b = dir.path().join("b.bin");
+    write(&a, b"AAAAAAAA");
+    write(&b, b"AAAAAAAA");
+
+    let mut inventory = collect_files(dir.path(), &silent).unwrap();
+    let original_modified = fs::metadata(&b).unwrap().modified().unwrap();
+
+    thread::sleep(Duration::from_millis(5));
+    write(&b, b"BBBBBBBB");
+    let rewritten = fs::OpenOptions::new().write(true).open(&b).unwrap();
+    rewritten
+        .set_times(fs::FileTimes::new().set_modified(original_modified))
+        .unwrap();
+    drop(rewritten);
+
+    let cache = HashCache::open().unwrap();
+    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(
+        groups.is_empty(),
+        "filesystem change time must invalidate stale evidence even when mtime is restored"
+    );
+}
