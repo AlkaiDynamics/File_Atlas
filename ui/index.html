@@ -63,8 +63,8 @@
           <h2>Atlas map</h2>
         </div>
         <div class="lens-switch" role="group" aria-label="Atlas metric">
-          <button class="lens active" data-lens="space">SPACE</button>
-          <button class="lens" data-lens="waste">WASTE</button>
+          <button class="lens" data-lens="space">SPACE</button>
+          <button class="lens active" data-lens="waste">WASTE</button>
           <button class="lens" data-lens="structure">STRUCTURE</button>
         </div>
       </div>
@@ -85,6 +85,45 @@
           </div>
           <span id="duplicateCount" class="badge"></span>
         </div>
+        <div class="dedupe-controls" aria-label="Duplicate filters">
+          <label>
+            <span>File family</span>
+            <select id="familyFilter">
+              <option value="all">All files</option>
+              <option value="media">Media</option>
+              <option value="documents">Documents</option>
+              <option value="archives">Archives</option>
+              <option value="installers">Installers</option>
+              <option value="developer">Developer/code</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            <span>Min reclaimable</span>
+            <select id="minWasteFilter">
+              <option value="0">Any size</option>
+              <option value="1048576">1 MB+</option>
+              <option value="10485760">10 MB+</option>
+              <option value="104857600">100 MB+</option>
+              <option value="1073741824">1 GB+</option>
+            </select>
+          </label>
+          <label>
+            <span>Physical copies</span>
+            <select id="copyFilter">
+              <option value="2">2+</option>
+              <option value="3">3+</option>
+              <option value="4">4+</option>
+              <option value="5">5+</option>
+            </select>
+          </label>
+          <label class="path-filter">
+            <span>Path contains</span>
+            <input id="pathFilter" type="text" placeholder="folder, drive, filename…" />
+          </label>
+          <button id="clearDedupeFilters" class="secondary compact">Clear filters</button>
+        </div>
+        <div id="dedupeScope" class="dedupe-scope hidden"></div>
         <div id="duplicateGroups" class="stack"></div>
       </article>
 
