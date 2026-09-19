@@ -127,6 +127,7 @@ footer { margin: 26px 0 4px; color: #607085; text-align: center; font-size: 11px
 .member-kind { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 9px; font-weight: 900; letter-spacing: .07em; white-space: nowrap; }
 .duplicate-members .reference .member-kind { color: var(--good); }
 .duplicate-members .physical-copy .member-kind { color: var(--waste); }
+.duplicate-members .linked-copy .member-kind { color: #fda4af; }
 .duplicate-members .hardlink-alias .member-kind { color: var(--warning); }
 @media (max-width: 760px) {
   .duplicate-members li { grid-template-columns: 1fr; }
