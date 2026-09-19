@@ -187,60 +187,73 @@ function renderAtlas() {
 
 function renderMassTree(root) {
   if (!state.expandedPaths.size) state.expandedPaths.add(root.path);
-  const render = () => {
-    const rows = [];
-    flattenVisible(root, 0, state.expandedPaths, rows);
-    ui.massTree.innerHTML = "";
-    const barClass = state.lens === "waste" ? "waste" : state.lens === "structure" ? "structure" : "";
-    for (const { node, depth } of rows) {
-      if (depth > 0 && metricFor(node) <= 0) continue;
-      const parentMetric = depth === 0 ? Math.max(1, metricFor(node)) : Math.max(1, metricFor(findParent(root, node.path) || root));
-      const pct = Math.max(metricFor(node) > 0 ? 1.5 : 0, Math.min(100, (metricFor(node) / parentMetric) * 100));
-      const row = document.createElement("div");
-      row.className = "mass-row";
-      row.setAttribute("role", "treeitem");
-      row.setAttribute("aria-level", String(depth + 1));
-      const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-      row.innerHTML = `
-        <div class="mass-path" style="padding-left:${depth * 16}px">
-          ${hasChildren ? `<button class="mass-toggle" aria-label="Toggle folder">${state.expandedPaths.has(node.path) ? "▾" : "▸"}</button>` : '<span class="leaf-pad"></span>'}
-          <span class="mass-name" title="${escapeHtml(node.path)}">${escapeHtml(node.name || node.path)}</span>
-        </div>
-        <div class="mass-bar-track">
-          <div class="mass-bar ${barClass}" style="width:${pct}%"></div>
-          <span class="mass-bar-label">${bytes(metricFor(node))}</span>
-        </div>
-        <div class="mass-size">${bytes(metricFor(node))}</div>
-        <div class="mass-files">${number(node.fileCount)}</div>
-      `;
-      if (hasChildren) {
-        row.querySelector(".mass-toggle").addEventListener("click", () => {
-          if (state.expandedPaths.has(node.path)) expanded.delete(node.path);
-          else expanded.add(node.path);
-          render();
-        });
-      }
-      ui.massTree.appendChild(row);
+
+  const rows = [];
+  flattenVisible(root, 0, state.expandedPaths, rows, null);
+  ui.massTree.innerHTML = "";
+  const barClass = state.lens === "waste" ? "waste" : state.lens === "structure" ? "structure" : "";
+
+  for (const { node, depth, parent } of rows) {
+    if (depth > 0 && metricFor(node) <= 0) continue;
+
+    const nodeMetric = metricFor(node);
+    const parentMetric = Math.max(1, metricFor(parent || node));
+    const pct = Math.max(
+      nodeMetric > 0 ? 1.5 : 0,
+      Math.min(100, (nodeMetric / parentMetric) * 100),
+    );
+
+    const row = document.createElement("div");
+    row.className = "mass-row";
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(depth + 1));
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+
+    row.innerHTML = `
+      <div class="mass-path" style="padding-left:${depth * 16}px">
+        ${hasChildren ? `<button class="mass-toggle" aria-label="Toggle folder">${state.expandedPaths.has(node.path) ? "▾" : "▸"}</button>` : '<span class="leaf-pad"></span>'}
+        <span class="mass-name" title="${escapeHtml(node.path)}">${escapeHtml(node.name || node.path)}</span>
+      </div>
+      <div class="mass-bar-track">
+        <div class="mass-bar ${barClass}" style="width:${pct}%"></div>
+        <span class="mass-bar-label">${bytes(nodeMetric)}</span>
+      </div>
+      <div class="mass-size">${bytes(nodeMetric)}</div>
+      <div class="mass-files">${number(node.fileCount)}</div>
+    `;
+
+    if (state.dedupeScopePath === node.path) {
+      row.classList.add("scoped");
     }
-  };
-  render();
-}
 
-function flattenVisible(node, depth, expanded, output) {
-  output.push({ node, depth });
-  if (!state.expandedPaths.has(node.path)) return;
-  const children = [...(node.children || [])].sort((a, b) => metricFor(b) - metricFor(a));
-  for (const child of children) flattenVisible(child, depth + 1, expanded, output);
-}
+    if (hasChildren) {
+      row.querySelector(".mass-toggle").addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (state.expandedPaths.has(node.path)) state.expandedPaths.delete(node.path);
+        else state.expandedPaths.add(node.path);
+        renderMassTree(root);
+      });
+    }
 
-function findParent(root, path) {
-  if (!root.children) return null;
-  for (const child of root.children) {
-    if (child.path === path) return root;
-    const nested = findParent(child, path);
-    if (nested) return nested;
+    row.addEventListener("click", () => {
+      state.dedupeScopePath = state.dedupeScopePath === node.path ? null : node.path;
+      renderDedupeScope();
+      renderDuplicates(state.report?.duplicates || []);
+      renderMassTree(root);
+    });
+
+    ui.massTree.appendChild(row);
   }
-  return null;
+}
+
+function flattenVisible(node, depth, expanded, output, parent) {
+  output.push({ node, depth, parent });
+  if (!expanded.has(node.path)) return;
+
+  const children = [...(node.children || [])].sort((a, b) => metricFor(b) - metricFor(a));
+  for (const child of children) {
+    flattenVisible(child, depth + 1, expanded, output, node);
+  }
 }
 
 function renderDuplicates(groups) {
