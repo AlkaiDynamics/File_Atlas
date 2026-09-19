@@ -9,6 +9,7 @@ const state = {
     family: "all",
     minWaste: 0,
     minCopies: 2,
+    sensitivity: "all",
     path: "",
   },
 };
@@ -39,6 +40,7 @@ const ui = {
   familyFilter: $("familyFilter"),
   minWasteFilter: $("minWasteFilter"),
   copyFilter: $("copyFilter"),
+  sensitivityFilter: $("sensitivityFilter"),
   pathFilter: $("pathFilter"),
   clearDedupeFilters: $("clearDedupeFilters"),
   dedupeScope: $("dedupeScope"),
@@ -254,12 +256,18 @@ function renderDuplicates(groups) {
   ui.duplicateGroups.innerHTML = filtered.slice(0, 100).map((group, index) => {
     const members = group.members.map((member) => {
       const keep = member.path === group.keepPath;
-      return `<li class="${keep ? "keep" : "redundant"}">${escapeHtml(member.path)}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</li>`;
+      return `<li class="${keep ? "reference" : "redundant"}">${escapeHtml(member.path)}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</li>`;
     }).join("");
+    const sensitivity = groupSensitivity(group);
+    const folderCount = new Set(group.members.map((member) => parentPath(member.path))).size;
     return `<div class="card duplicate-card">
       <div class="card-head">
         <strong>#${index + 1} · ${bytes(group.reclaimableBytes)} reclaimable</strong>
-        <small>${group.physicalCopies} physical · ${group.hardlinkAliases} aliases · ${bytes(group.logicalBytesEach)} each</small>
+        <small>${group.physicalCopies} physical · ${group.hardlinkAliases} aliases · ${bytes(group.logicalBytesEach)} each · ${folderCount} folder${folderCount === 1 ? "" : "s"}</small>
+      </div>
+      <div class="duplicate-flags">
+        <span class="sensitivity ${sensitivity.level}">${escapeHtml(sensitivity.label)}</span>
+        <span class="evidence-flag">EXACT · BYTE VERIFIED</span>
       </div>
       <ul class="path-list">${members}</ul>
     </div>`;
@@ -285,6 +293,10 @@ function groupMatchesFilters(group) {
   if (state.dedupeFilters.family !== "all") {
     if (!paths.some((path) => fileFamily(path) === state.dedupeFilters.family)) return false;
   }
+
+  const sensitivity = groupSensitivity(group).level;
+  if (state.dedupeFilters.sensitivity === "user" && sensitivity !== "user") return false;
+  if (state.dedupeFilters.sensitivity === "sensitive" && sensitivity === "user") return false;
   return true;
 }
 
@@ -309,10 +321,46 @@ function fileFamily(path) {
   return "other";
 }
 
+function parentPath(path) {
+  const normalized = normalizedPath(path);
+  const slash = normalized.lastIndexOf("/");
+  return slash >= 0 ? normalized.slice(0, slash) : normalized;
+}
+
+function pathSensitivity(path) {
+  const p = "/" + normalizedPath(path).replace(/^\/+/, "") + "/";
+  const systemTokens = [
+    "/windows/",
+    "/program files/",
+    "/program files (x86)/",
+    "/programdata/",
+    "/system volume information/",
+    "/$recycle.bin/",
+  ];
+  if (systemTokens.some((token) => p.includes(token))) {
+    return { level: "system", label: "SYSTEM / APPLICATION PATH" };
+  }
+  if (p.includes("/appdata/")) {
+    return { level: "appdata", label: "APPDATA · DEPENDENCY-SENSITIVE" };
+  }
+  return { level: "user", label: "USER-LOOKING LOCATION" };
+}
+
+function groupSensitivity(group) {
+  let best = { level: "user", label: "USER-LOOKING LOCATION" };
+  for (const member of group.members) {
+    const sensitivity = pathSensitivity(member.path);
+    if (sensitivity.level === "system") return sensitivity;
+    if (sensitivity.level === "appdata") best = sensitivity;
+  }
+  return best;
+}
+
 function syncDedupeControls() {
   ui.familyFilter.value = state.dedupeFilters.family;
   ui.minWasteFilter.value = String(state.dedupeFilters.minWaste);
   ui.copyFilter.value = String(state.dedupeFilters.minCopies);
+  ui.sensitivityFilter.value = state.dedupeFilters.sensitivity;
   ui.pathFilter.value = state.dedupeFilters.path;
   renderDedupeScope();
 }
@@ -337,6 +385,7 @@ function refreshDedupeFilters() {
   state.dedupeFilters.family = ui.familyFilter.value;
   state.dedupeFilters.minWaste = Number(ui.minWasteFilter.value) || 0;
   state.dedupeFilters.minCopies = Number(ui.copyFilter.value) || 2;
+  state.dedupeFilters.sensitivity = ui.sensitivityFilter.value;
   state.dedupeFilters.path = ui.pathFilter.value || "";
   renderDuplicates(state.report?.duplicates || []);
 }
@@ -405,9 +454,10 @@ ui.scanButton.addEventListener("click", scan);
 ui.familyFilter.addEventListener("change", refreshDedupeFilters);
 ui.minWasteFilter.addEventListener("change", refreshDedupeFilters);
 ui.copyFilter.addEventListener("change", refreshDedupeFilters);
+ui.sensitivityFilter.addEventListener("change", refreshDedupeFilters);
 ui.pathFilter.addEventListener("input", refreshDedupeFilters);
 ui.clearDedupeFilters.addEventListener("click", () => {
-  state.dedupeFilters = { family: "all", minWaste: 0, minCopies: 2, path: "" };
+  state.dedupeFilters = { family: "all", minWaste: 0, minCopies: 2, sensitivity: "all", path: "" };
   state.dedupeScopePath = null;
   syncDedupeControls();
   renderDuplicates(state.report?.duplicates || []);
