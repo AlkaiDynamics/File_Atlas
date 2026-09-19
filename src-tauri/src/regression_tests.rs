@@ -124,7 +124,8 @@ fn stale_inventory_record_is_rejected_after_file_changes() {
     write(&b, b"different");
 
     let cache = HashCache::open().unwrap();
-    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let groups = analysis.groups;
     assert!(groups.is_empty(), "changed files must not survive a stale metadata snapshot");
 }
 
@@ -290,7 +291,8 @@ fn file_disappearing_after_inventory_does_not_crash_or_become_duplicate_evidence
     fs::remove_file(&b).unwrap();
 
     let cache = HashCache::open().unwrap();
-    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let groups = analysis.groups;
     assert!(groups.is_empty());
 }
 
@@ -348,7 +350,8 @@ fn hardlinked_redundant_copy_distributes_waste_without_double_counting() {
     let mut inventory = collect_files(dir.path(), &silent).unwrap();
     inventory.files.sort_by(|a, b| a.path.cmp(&b.path));
     let cache = HashCache::open().unwrap();
-    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let groups = analysis.groups;
 
     assert_eq!(groups.len(), 1);
     let group = &groups[0];
@@ -396,7 +399,8 @@ fn replacement_with_same_size_and_timestamp_is_rejected_by_identity() {
     drop(replacement);
 
     let cache = HashCache::open().unwrap();
-    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let groups = analysis.groups;
     assert!(
         groups.is_empty(),
         "a path whose physical identity changed must be rejected until a fresh inventory"
@@ -424,7 +428,8 @@ fn same_identity_rewrite_with_restored_mtime_is_rejected() {
     drop(rewritten);
 
     let cache = HashCache::open().unwrap();
-    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    let groups = analysis.groups;
     assert!(
         groups.is_empty(),
         "filesystem change time must invalidate stale evidence even when mtime is restored"
