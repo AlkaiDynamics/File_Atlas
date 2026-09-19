@@ -3,6 +3,8 @@ mod duplicates;
 mod engine;
 mod models;
 mod scanner;
+#[cfg(test)]
+mod regression_tests;
 
 use models::{ScanProgress, ScanReport};
 use std::path::PathBuf;
