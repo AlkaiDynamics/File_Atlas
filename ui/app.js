@@ -186,8 +186,6 @@ function renderAtlas() {
 }
 
 function renderMassTree(root) {
-  if (!state.expandedPaths.size) state.expandedPaths.add(root.path);
-
   const rows = [];
   flattenVisible(root, 0, state.expandedPaths, rows, null);
   ui.massTree.innerHTML = "";
