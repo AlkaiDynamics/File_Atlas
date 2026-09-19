@@ -309,3 +309,27 @@ fn scan_releases_file_handles_after_analysis() {
     fs::rename(&original, &renamed).unwrap();
     assert!(renamed.exists());
 }
+
+
+#[test]
+fn directory_tree_preserves_more_than_eighteen_siblings() {
+    let dir = tempdir().unwrap();
+    for n in 0..32 {
+        write(
+            &dir.path().join(format!("folder-{n:02}")).join("file.bin"),
+            format!("unique-{n:02}").as_bytes(),
+        );
+    }
+
+    let report = scan_root(dir.path(), silent).unwrap();
+    assert_eq!(report.summary.files_scanned, 32);
+    assert_eq!(report.directory_tree.children.len(), 32);
+    assert!(
+        report
+            .directory_tree
+            .children
+            .iter()
+            .all(|child| child.name != "[other]"),
+        "the evidence hierarchy must never synthesize lossy [other] paths"
+    );
+}
