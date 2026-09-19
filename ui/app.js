@@ -254,9 +254,32 @@ function renderDuplicates(groups) {
     : `${bytes(filteredWaste)} · ${number(filtered.length)}/${number(groups.length)} groups`;
 
   ui.duplicateGroups.innerHTML = filtered.slice(0, 100).map((group, index) => {
+    const referenceMember = group.members.find((member) => member.path === group.keepPath);
+    const referenceIdentity = referenceMember?.identity;
+    const representativeByIdentity = new Map();
+    for (const member of [...group.members].sort((a, b) => a.path.localeCompare(b.path))) {
+      if (!representativeByIdentity.has(member.identity)) {
+        representativeByIdentity.set(member.identity, member.path);
+      }
+    }
     const members = group.members.map((member) => {
-      const keep = member.path === group.keepPath;
-      return `<li class="${keep ? "reference" : "redundant"}">${escapeHtml(member.path)}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</li>`;
+      let kind = "physical-copy";
+      let label = "PHYSICAL COPY";
+      let suffix = ` · ${bytes(member.allocatedBytes)} allocated`;
+      if (member.path === group.keepPath) {
+        kind = "reference";
+        label = "REFERENCE";
+        suffix = ` · accounting anchor · ${bytes(member.allocatedBytes)} allocated`;
+      } else if (representativeByIdentity.get(member.identity) !== member.path) {
+        kind = "hardlink-alias";
+        label = "HARDLINK ALIAS";
+        suffix = " · shared physical file · 0 B direct recovery";
+      } else if (member.identity === referenceIdentity) {
+        kind = "hardlink-alias";
+        label = "HARDLINK ALIAS";
+        suffix = " · same physical file as reference · 0 B direct recovery";
+      }
+      return `<li class="${kind}"><span class="member-kind">${label}</span><span>${escapeHtml(member.path)}</span><small>${suffix}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</small></li>`;
     }).join("");
     const sensitivity = groupSensitivity(group);
     const folderCount = new Set(group.members.map((member) => parentPath(member.path))).size;
@@ -269,7 +292,7 @@ function renderDuplicates(groups) {
         <span class="sensitivity ${sensitivity.level}">${escapeHtml(sensitivity.label)}</span>
         <span class="evidence-flag">EXACT · BYTE VERIFIED</span>
       </div>
-      <ul class="path-list">${members}</ul>
+      <ul class="path-list duplicate-members">${members}</ul>
     </div>`;
   }).join("") || `<div class="empty">No exact duplicate groups match the current targeting controls.</div>`;
 }
