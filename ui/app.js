@@ -22,10 +22,8 @@ const ui = {
   fileCount: $("fileCount"),
   fileSubline: $("fileSubline"),
   atlasSection: $("atlasSection"),
-  treemap: $("treemap"),
-  mapDetail: $("mapDetail"),
+  massTree: $("massTree"),
   lensExplanation: $("lensExplanation"),
-  hotspotList: $("hotspotList"),
   evidenceGrid: $("evidenceGrid"),
   secondaryGrid: $("secondaryGrid"),
   duplicateCount: $("duplicateCount"),
@@ -166,105 +164,65 @@ function renderAtlas() {
     structure: "Tile area = logical file size across paths. Useful for understanding huge trees even when they are not waste.",
   };
   ui.lensExplanation.textContent = explanations[state.lens];
-  renderTreemap(state.report.directoryTree);
-  renderHotspots(state.report.hotspots);
+  renderMassTree(state.report.directoryTree);
 }
 
-function renderTreemap(root) {
-  ui.treemap.replaceChildren();
-  const nodes = [];
-  layoutNode(root, 0, 0, 1000, 460, 0, nodes);
-  const [r, g, b] = lensColor();
-
-  for (const item of nodes) {
-    if (item.depth === 0) continue;
-    const metric = metricFor(item.node);
-    if (metric <= 0) continue;
-    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", item.x + 1);
-    rect.setAttribute("y", item.y + 1);
-    rect.setAttribute("width", Math.max(0, item.w - 2));
-    rect.setAttribute("height", Math.max(0, item.h - 2));
-    rect.setAttribute("rx", "5");
-    rect.setAttribute("class", "tile");
-    const wasteRatio = item.node.allocatedBytes ? item.node.reclaimableBytes / item.node.allocatedBytes : 0;
-    const alpha = state.lens === "waste" ? 0.35 + Math.min(.6, wasteRatio + .15) : 0.22 + Math.min(.55, item.depth * .08);
-    rect.setAttribute("fill", `rgba(${r},${g},${b},${alpha})`);
-    rect.addEventListener("click", () => showMapDetail(item.node));
-    group.appendChild(rect);
-
-    if (item.w > 115 && item.h > 42) {
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("x", item.x + 10);
-      label.setAttribute("y", item.y + 21);
-      label.setAttribute("class", "tile-label");
-      label.textContent = truncate(item.node.name, Math.max(8, Math.floor(item.w / 8)));
-      group.appendChild(label);
-
-      const value = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      value.setAttribute("x", item.x + 10);
-      value.setAttribute("y", item.y + 37);
-      value.setAttribute("class", "tile-value");
-      value.textContent = bytes(metric);
-      group.appendChild(value);
+function renderMassTree(root) {
+  const expanded = new Set([root.path]);
+  const render = () => {
+    const rows = [];
+    flattenVisible(root, 0, expanded, rows);
+    ui.massTree.innerHTML = "";
+    const barClass = state.lens === "waste" ? "waste" : state.lens === "structure" ? "structure" : "";
+    for (const { node, depth } of rows) {
+      if (depth > 0 && metricFor(node) <= 0) continue;
+      const parentMetric = depth === 0 ? Math.max(1, metricFor(node)) : Math.max(1, metricFor(findParent(root, node.path) || root));
+      const pct = Math.max(metricFor(node) > 0 ? 1.5 : 0, Math.min(100, (metricFor(node) / parentMetric) * 100));
+      const row = document.createElement("div");
+      row.className = "mass-row";
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("aria-level", String(depth + 1));
+      const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+      row.innerHTML = `
+        <div class="mass-path" style="padding-left:${depth * 16}px">
+          ${hasChildren ? `<button class="mass-toggle" aria-label="Toggle folder">${expanded.has(node.path) ? "▾" : "▸"}</button>` : '<span class="leaf-pad"></span>'}
+          <span class="mass-name" title="${escapeHtml(node.path)}">${escapeHtml(node.name || node.path)}</span>
+        </div>
+        <div class="mass-bar-track">
+          <div class="mass-bar ${barClass}" style="width:${pct}%"></div>
+          <span class="mass-bar-label">${bytes(metricFor(node))}</span>
+        </div>
+        <div class="mass-size">${bytes(metricFor(node))}</div>
+        <div class="mass-files">${number(node.fileCount)}</div>
+      `;
+      if (hasChildren) {
+        row.querySelector(".mass-toggle").addEventListener("click", () => {
+          if (expanded.has(node.path)) expanded.delete(node.path);
+          else expanded.add(node.path);
+          render();
+        });
+      }
+      ui.massTree.appendChild(row);
     }
-    ui.treemap.appendChild(group);
+  };
+  render();
+}
+
+function flattenVisible(node, depth, expanded, output) {
+  output.push({ node, depth });
+  if (!expanded.has(node.path)) return;
+  const children = [...(node.children || [])].sort((a, b) => metricFor(b) - metricFor(a));
+  for (const child of children) flattenVisible(child, depth + 1, expanded, output);
+}
+
+function findParent(root, path) {
+  if (!root.children) return null;
+  for (const child of root.children) {
+    if (child.path === path) return root;
+    const nested = findParent(child, path);
+    if (nested) return nested;
   }
-}
-
-function layoutNode(node, x, y, w, h, depth, output) {
-  output.push({ node, x, y, w, h, depth });
-  if (!node.children?.length || depth >= 5 || w < 18 || h < 18) return;
-  const children = node.children.filter((child) => metricFor(child) > 0);
-  const total = children.reduce((sum, child) => sum + metricFor(child), 0);
-  if (!total) return;
-
-  let cursor = depth % 2 === 0 ? x : y;
-  children.forEach((child, index) => {
-    const fraction = metricFor(child) / total;
-    if (depth % 2 === 0) {
-      const cw = index === children.length - 1 ? x + w - cursor : w * fraction;
-      layoutNode(child, cursor, y, cw, h, depth + 1, output);
-      cursor += cw;
-    } else {
-      const ch = index === children.length - 1 ? y + h - cursor : h * fraction;
-      layoutNode(child, x, cursor, w, ch, depth + 1, output);
-      cursor += ch;
-    }
-  });
-}
-
-function showMapDetail(node) {
-  const wasteRatio = node.allocatedBytes ? (node.reclaimableBytes / node.allocatedBytes) * 100 : 0;
-  ui.mapDetail.innerHTML = `
-    <span class="muted">${escapeHtml(lensLabel())}</span>
-    <strong>${escapeHtml(node.path)}</strong>
-    <p>
-      ${bytes(metricFor(node))} in this lens<br>
-      Physical: ${bytes(node.allocatedBytes)}<br>
-      Logical: ${bytes(node.logicalBytes)}<br>
-      Verified waste: ${bytes(node.reclaimableBytes)} (${wasteRatio.toFixed(1)}%)<br>
-      Files: ${number(node.fileCount)}
-    </p>`;
-}
-
-function renderHotspots(hotspots) {
-  const sorted = [...hotspots]
-    .filter((h) => metricFor(h) > 0)
-    .sort((a, b) => metricFor(b) - metricFor(a))
-    .slice(0, 18);
-  const max = Math.max(1, ...sorted.map((h) => metricFor(h)));
-  const barClass = state.lens === "waste" ? "waste" : state.lens === "structure" ? "structure" : "";
-  ui.hotspotList.innerHTML = sorted.map((h) => {
-    const pct = (metricFor(h) / max) * 100;
-    return `<div class="hotspot">
-      <div class="hotspot-path" title="${escapeHtml(h.path)}">${escapeHtml(h.path)}</div>
-      <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${pct}%"></div></div>
-      <strong>${bytes(metricFor(h))}</strong>
-      <span class="muted">${number(h.fileCount)} files</span>
-    </div>`;
-  }).join("") || `<div class="empty">Nothing measurable in this lens.</div>`;
+  return null;
 }
 
 function renderDuplicates(groups) {
