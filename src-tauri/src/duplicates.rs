@@ -6,20 +6,28 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::UNIX_EPOCH;
 
 const PREHASH_CHUNK: usize = 64 * 1024;
 const FULL_HASH_CHUNK: usize = 1024 * 1024;
 const VERIFY_CHUNK: usize = 1024 * 1024;
 
+pub struct DuplicateAnalysis {
+    pub groups: Vec<DuplicateGroup>,
+    pub incomplete: bool,
+}
+
 pub fn find_exact_duplicates<F>(
     files: &mut [FileRecord],
     cache: &HashCache,
     progress: &F,
-) -> Vec<DuplicateGroup>
+) -> DuplicateAnalysis
 where
     F: Fn(ScanProgress) + Sync,
 {
+    let incomplete = AtomicBool::new(false);
+
     // Hash each physical file identity once. Hardlink aliases are expanded back
     // into evidence only after redundant physical copies have been verified.
     let mut identity_members: HashMap<String, Vec<usize>> = HashMap::new();
@@ -59,6 +67,7 @@ where
         .filter_map(|idx| {
             let file = &files[*idx];
             if !record_is_current(file) {
+                incomplete.store(true, Ordering::Relaxed);
                 return None;
             }
             let cached = cache.get(
@@ -70,8 +79,15 @@ where
             if let Some(prehash) = cached.and_then(|entry| entry.prehash) {
                 return record_is_current(file).then_some((*idx, prehash));
             }
-            let prehash = prehash_file(Path::new(&file.path), file.logical_bytes).ok()?;
+            let prehash = match prehash_file(Path::new(&file.path), file.logical_bytes) {
+                Ok(prehash) => prehash,
+                Err(_) => {
+                    incomplete.store(true, Ordering::Relaxed);
+                    return None;
+                }
+            };
             if !record_is_current(file) {
+                incomplete.store(true, Ordering::Relaxed);
                 return None;
             }
             cache.put_prehash(
@@ -117,6 +133,7 @@ where
         .filter_map(|(idx, prehash)| {
             let file = &files[*idx];
             if !record_is_current(file) {
+                incomplete.store(true, Ordering::Relaxed);
                 return None;
             }
             if let Some(full_hash) = cache
@@ -130,8 +147,15 @@ where
             {
                 return record_is_current(file).then_some((*idx, full_hash));
             }
-            let full_hash = full_hash_file(Path::new(&file.path)).ok()?;
+            let full_hash = match full_hash_file(Path::new(&file.path)) {
+                Ok(full_hash) => full_hash,
+                Err(_) => {
+                    incomplete.store(true, Ordering::Relaxed);
+                    return None;
+                }
+            };
             if !record_is_current(file) {
+                incomplete.store(true, Ordering::Relaxed);
                 return None;
             }
             cache.put_full_hash(
@@ -163,7 +187,7 @@ where
         .into_iter()
         .filter(|(_, indices)| indices.len() > 1)
     {
-        for physical_bucket in split_by_byte_identity(&representatives, files) {
+        for physical_bucket in split_by_byte_identity(&representatives, files, &incomplete) {
             if physical_bucket.len() < 2 {
                 continue;
             }
@@ -185,7 +209,10 @@ where
         }
     }
     groups.sort_by_key(|group| std::cmp::Reverse(group.reclaimable_bytes));
-    groups
+    DuplicateAnalysis {
+        groups,
+        incomplete: incomplete.load(Ordering::Relaxed),
+    }
 }
 
 fn prehash_file(path: &Path, size: u64) -> std::io::Result<String> {
@@ -224,28 +251,45 @@ fn full_hash_file(path: &Path) -> std::io::Result<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-fn split_by_byte_identity(indices: &[usize], files: &[FileRecord]) -> Vec<Vec<usize>> {
+fn split_by_byte_identity(
+    indices: &[usize],
+    files: &[FileRecord],
+    incomplete: &AtomicBool,
+) -> Vec<Vec<usize>> {
     let mut buckets: Vec<Vec<usize>> = Vec::new();
     'outer: for idx in indices {
         if !record_is_current(&files[*idx]) {
+            incomplete.store(true, Ordering::Relaxed);
             continue;
         }
         for bucket in &mut buckets {
             let anchor = bucket[0];
             if !record_is_current(&files[anchor]) {
+                incomplete.store(true, Ordering::Relaxed);
                 continue;
             }
-            if files_equal(
+
+            let equal = match files_equal(
                 Path::new(&files[anchor].path),
                 Path::new(&files[*idx].path),
-            )
-            .unwrap_or(false)
-                && record_is_current(&files[anchor])
-                && record_is_current(&files[*idx])
-            {
-                bucket.push(*idx);
-                continue 'outer;
+            ) {
+                Ok(equal) => equal,
+                Err(_) => {
+                    incomplete.store(true, Ordering::Relaxed);
+                    false
+                }
+            };
+            if !equal {
+                continue;
             }
+
+            if !record_is_current(&files[anchor]) || !record_is_current(&files[*idx]) {
+                incomplete.store(true, Ordering::Relaxed);
+                continue;
+            }
+
+            bucket.push(*idx);
+            continue 'outer;
         }
         buckets.push(vec![*idx]);
     }
@@ -441,7 +485,9 @@ mod tests {
         fs::write(&b, b"same").unwrap();
         fs::write(&c, b"diff").unwrap();
         let files = vec![record(&a, "a"), record(&b, "b"), record(&c, "c")];
-        let buckets = split_by_byte_identity(&[0, 1, 2], &files);
+        let incomplete = AtomicBool::new(false);
+        let buckets = split_by_byte_identity(&[0, 1, 2], &files, &incomplete);
+        assert!(!incomplete.load(Ordering::Relaxed));
         assert_eq!(buckets.len(), 2);
         assert!(buckets.iter().any(|bucket| bucket.len() == 2));
     }
