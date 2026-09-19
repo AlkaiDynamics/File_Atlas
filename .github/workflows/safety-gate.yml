@@ -1,0 +1,84 @@
+name: File Atlas safety gate
+
+on:
+  push:
+    branches:
+      - rebuild/storage-forensics-v2
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-syntax:
+    name: UI syntax and config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check renderer JavaScript
+        run: node --check ui/app.js
+      - name: Validate JSON configuration
+        shell: bash
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('src-tauri/capabilities/default.json','utf8'))"
+
+  rust-linux:
+    name: Rust adversarial suite (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libappindicator3-dev             librsvg2-dev             patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Run adversarial regression suite
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+  rust-windows:
+    name: Rust + NTFS fast-path compile (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Compile Windows target
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Run adversarial regression suite
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+  desktop-windows:
+    name: Build runnable Windows desktop app
+    runs-on: windows-latest
+    needs: [ui-syntax, rust-windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install desktop CLI
+        run: npm install
+      - name: Build File Atlas
+        run: npm run build
+      - name: Upload runnable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-atlas-windows
+          path: src-tauri/target/release/file-atlas.exe
+          if-no-files-found: error
