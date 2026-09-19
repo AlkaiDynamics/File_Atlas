@@ -243,17 +243,28 @@ fn build_large_files(files: &[FileRecord]) -> Vec<LargeFile> {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let mut large: Vec<_> = files
-        .iter()
-        .filter(|file| file.allocated_bytes >= LARGE_THRESHOLD)
-        .map(|file| LargeFile {
-            path: file.path.clone(),
-            allocated_bytes: file.allocated_bytes,
-            logical_bytes: file.logical_bytes,
-            modified_ms: file.modified_ms,
-            stale: file.modified_ms > 0 && file.modified_ms < stale_cutoff,
+
+    let mut by_identity: HashMap<&str, Vec<&FileRecord>> = HashMap::new();
+    for file in files.iter().filter(|file| file.allocated_bytes >= LARGE_THRESHOLD) {
+        by_identity.entry(file.identity.as_str()).or_default().push(file);
+    }
+
+    let mut large: Vec<_> = by_identity
+        .into_values()
+        .filter_map(|mut paths| {
+            paths.sort_by(|a, b| a.path.cmp(&b.path));
+            let file = *paths.first()?;
+            Some(LargeFile {
+                path: file.path.clone(),
+                allocated_bytes: file.allocated_bytes,
+                logical_bytes: file.logical_bytes,
+                modified_ms: file.modified_ms,
+                stale: file.modified_ms > 0 && file.modified_ms < stale_cutoff,
+                path_count: paths.len(),
+            })
         })
         .collect();
+
     large.sort_by_key(|file| std::cmp::Reverse(file.allocated_bytes));
     large.truncate(80);
     large
