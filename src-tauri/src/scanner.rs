@@ -121,7 +121,7 @@ fn skip_walk_entry(path: &Path, is_dir: bool) -> bool {
     is_reparse_or_symlink(&metadata)
 }
 
-pub(crate) fn current_file_state(path: &Path) -> Result<(u64, u64, String), std::io::Error> {
+pub(crate) fn current_file_state(path: &Path) -> Result<(u64, u64, i64, String), std::io::Error> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.file_type().is_file() || is_reparse_or_symlink(&metadata) {
         return Err(std::io::Error::other("not a regular file"));
@@ -132,8 +132,9 @@ pub(crate) fn current_file_state(path: &Path) -> Result<(u64, u64, String), std:
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
         .unwrap_or(0);
+    let change_stamp = filesystem_change_stamp(path, &metadata)?;
     let (identity, _, _) = physical_info(path, &metadata)?;
-    Ok((metadata.len(), modified_ns, identity))
+    Ok((metadata.len(), modified_ns, change_stamp, identity))
 }
 
 fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Error> {
@@ -150,6 +151,7 @@ fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Erro
         .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
         .unwrap_or(0);
     let modified_ms = modified_ns / 1_000_000;
+    let change_stamp = filesystem_change_stamp(path, &metadata)?;
     let (identity, allocated_bytes, link_count) = physical_info(path, &metadata)?;
     let relative_path = path
         .strip_prefix(root)
@@ -169,11 +171,59 @@ fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Erro
         allocated_bytes,
         modified_ms,
         modified_ns,
+        change_stamp,
         identity,
         link_count,
         extension,
         reclaimable_bytes: 0,
     })
+}
+
+#[cfg(unix)]
+fn filesystem_change_stamp(_path: &Path, metadata: &fs::Metadata) -> Result<i64, std::io::Error> {
+    use std::os::unix::fs::MetadataExt;
+    let value = (metadata.ctime() as i128)
+        .saturating_mul(1_000_000_000)
+        .saturating_add(metadata.ctime_nsec() as i128);
+    Ok(value.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
+}
+
+#[cfg(windows)]
+fn filesystem_change_stamp(path: &Path, _metadata: &fs::Metadata) -> Result<i64, std::io::Error> {
+    use std::fs::File;
+    use std::mem::size_of;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandleEx, FILE_BASIC_INFO, FileBasicInfo,
+    };
+
+    let file = File::open(path)?;
+    let handle = file.as_raw_handle() as HANDLE;
+    let mut basic = FILE_BASIC_INFO::default();
+    if unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileBasicInfo,
+            &mut basic as *mut _ as *mut core::ffi::c_void,
+            size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(basic.ChangeTime)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn filesystem_change_stamp(_path: &Path, metadata: &fs::Metadata) -> Result<i64, std::io::Error> {
+    let modified = metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .min(i64::MAX as u128) as i64;
+    Ok(modified)
 }
 
 #[cfg(unix)]
