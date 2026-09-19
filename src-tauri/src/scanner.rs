@@ -173,25 +173,60 @@ fn physical_info(path: &Path, metadata: &fs::Metadata) -> Result<(String, u64, u
 
 #[cfg(windows)]
 fn physical_info(path: &Path, metadata: &fs::Metadata) -> Result<(String, u64, u64), std::io::Error> {
+    use std::fmt::Write as _;
     use std::fs::File;
-    use std::mem::{size_of, zeroed};
+    use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Foundation::{
+        ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED, HANDLE,
+    };
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileInformationByHandle, GetFileInformationByHandleEx, BY_HANDLE_FILE_INFORMATION,
-        FILE_STANDARD_INFO, FileStandardInfo,
+        FILE_ID_INFO, FILE_STANDARD_INFO, FileIdInfo, FileStandardInfo,
     };
 
     let file = File::open(path)?;
     let handle = file.as_raw_handle() as HANDLE;
-    let mut basic: BY_HANDLE_FILE_INFORMATION = unsafe { zeroed() };
+
+    // Keep the legacy structure for link count and as a compatibility fallback.
+    let mut basic = BY_HANDLE_FILE_INFORMATION::default();
     if unsafe { GetFileInformationByHandle(handle, &mut basic) } == 0 {
         return Err(std::io::Error::last_os_error());
     }
-    let file_index = ((basic.nFileIndexHigh as u64) << 32) | basic.nFileIndexLow as u64;
-    let identity = format!("{}:{}", basic.dwVolumeSerialNumber, file_index);
 
-    let mut standard: FILE_STANDARD_INFO = unsafe { zeroed() };
+    // Prefer the 128-bit identity. Microsoft documents the 64-bit file index as
+    // not guaranteed unique on ReFS, while FILE_ID_INFO + volume serial is.
+    let mut id128 = FILE_ID_INFO::default();
+    let identity = if unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileIdInfo,
+            &mut id128 as *mut _ as *mut core::ffi::c_void,
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    } != 0
+    {
+        let mut file_id = String::with_capacity(32);
+        for byte in id128.FileId.Identifier {
+            let _ = write!(&mut file_id, "{byte:02x}");
+        }
+        format!("id128:{}:{file_id}", id128.VolumeSerialNumber)
+    } else {
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(code)
+                if code == ERROR_NOT_SUPPORTED as i32
+                    || code == ERROR_INVALID_PARAMETER as i32 =>
+            {
+                let file_index =
+                    ((basic.nFileIndexHigh as u64) << 32) | basic.nFileIndexLow as u64;
+                format!("id64:{}:{file_index}", basic.dwVolumeSerialNumber)
+            }
+            _ => return Err(error),
+        }
+    };
+
+    let mut standard = FILE_STANDARD_INFO::default();
     let allocated = if unsafe {
         GetFileInformationByHandleEx(
             handle,
