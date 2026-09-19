@@ -69,15 +69,11 @@
         </div>
       </div>
       <p id="lensExplanation" class="muted"></p>
-      <div class="map-wrap">
-        <svg id="treemap" viewBox="0 0 1000 460" role="img" aria-label="Directory storage map"></svg>
-        <aside id="mapDetail" class="map-detail">
-          <span class="muted">Select a tile</span>
-          <strong>Directory detail</strong>
-          <p>Tile area follows the selected lens. Waste is never inferred from folder names.</p>
-        </aside>
+      <div class="tree-header">
+        <span>PATH</span><span>VISUAL MASS</span><span>SIZE</span><span>FILES</span>
       </div>
-      <div id="hotspotList" class="hotspot-list"></div>
+      <div id="massTree" class="mass-tree" role="tree" aria-label="Filesystem storage hierarchy"></div>
+      <div class="tree-note">Rows are proportional within their parent branch. Expand a folder to follow the mass downward.</div>
     </section>
 
     <section id="evidenceGrid" class="evidence-grid hidden">
