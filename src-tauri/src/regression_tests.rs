@@ -370,3 +370,35 @@ fn hardlinked_redundant_copy_distributes_waste_without_double_counting() {
         "visual waste attribution should be shared across every alias of the redundant identity"
     );
 }
+
+
+#[test]
+fn replacement_with_same_size_and_timestamp_is_rejected_by_identity() {
+    let dir = tempdir().unwrap();
+    let a = dir.path().join("a.bin");
+    let b = dir.path().join("b.bin");
+    let old_b = dir.path().join("b-original.bin");
+    write(&a, b"identical payload");
+    write(&b, b"identical payload");
+
+    let mut inventory = collect_files(dir.path(), &silent).unwrap();
+    let original_modified = fs::metadata(&b).unwrap().modified().unwrap();
+
+    // Move the inventoried object aside so its physical identity remains alive,
+    // then put a different object at the exact same path with the same bytes,
+    // size, and modification timestamp.
+    fs::rename(&b, &old_b).unwrap();
+    write(&b, b"identical payload");
+    let replacement = fs::OpenOptions::new().write(true).open(&b).unwrap();
+    replacement
+        .set_times(fs::FileTimes::new().set_modified(original_modified))
+        .unwrap();
+    drop(replacement);
+
+    let cache = HashCache::open().unwrap();
+    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(
+        groups.is_empty(),
+        "a path whose physical identity changed must be rejected until a fresh inventory"
+    );
+}
