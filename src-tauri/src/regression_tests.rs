@@ -333,3 +333,40 @@ fn directory_tree_preserves_more_than_eighteen_siblings() {
         "the evidence hierarchy must never synthesize lossy [other] paths"
     );
 }
+
+
+#[test]
+fn hardlinked_redundant_copy_distributes_waste_without_double_counting() {
+    let dir = tempdir().unwrap();
+    let reference = dir.path().join("a-reference.bin");
+    let linked_a = dir.path().join("z-linked-a.bin");
+    let linked_b = dir.path().join("z-linked-b.bin");
+    write(&reference, b"same physical content");
+    write(&linked_a, b"same physical content");
+    fs::hard_link(&linked_a, &linked_b).unwrap();
+
+    let mut inventory = collect_files(dir.path(), &silent).unwrap();
+    inventory.files.sort_by(|a, b| a.path.cmp(&b.path));
+    let cache = HashCache::open().unwrap();
+    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+
+    assert_eq!(groups.len(), 1);
+    let group = &groups[0];
+    assert_eq!(group.physical_copies, 2);
+    assert_eq!(group.hardlink_aliases, 1);
+
+    let attributed_total: u64 = inventory.files.iter().map(|file| file.reclaimable_bytes).sum();
+    assert_eq!(attributed_total, group.reclaimable_bytes);
+
+    let linked_attributions: Vec<u64> = inventory
+        .files
+        .iter()
+        .filter(|file| file.path.contains("z-linked-"))
+        .map(|file| file.reclaimable_bytes)
+        .collect();
+    assert_eq!(linked_attributions.len(), 2);
+    assert!(
+        linked_attributions.iter().all(|bytes| *bytes > 0),
+        "visual waste attribution should be shared across every alias of the redundant identity"
+    );
+}
