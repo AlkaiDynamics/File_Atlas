@@ -75,3 +75,27 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
   .tree-header > :last-child, .mass-row > :last-child { display: none; }
 }
 
+
+.evidence-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 14px; }
+.stack { display: grid; gap: 9px; margin-top: 14px; max-height: 560px; overflow: auto; padding-right: 4px; }
+.card { border: 1px solid var(--line); background: #0b1017; border-radius: 10px; padding: 12px; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.card strong { overflow-wrap: anywhere; }
+.card small { color: var(--muted); }
+.path-list { margin: 9px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.path-list li { color: #aab7c6; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+.path-list .keep::before { content: "KEEP · "; color: var(--good); font-weight: 800; }
+.path-list .redundant::before { content: "COPY · "; color: var(--waste); font-weight: 800; }
+.signal-confidence { font-size: 10px; color: var(--warning); text-transform: uppercase; letter-spacing: .08em; }
+.bar-list { display: grid; gap: 10px; margin-top: 14px; }
+.type-row { display: grid; grid-template-columns: 110px minmax(100px, 1fr) 90px; align-items: center; gap: 10px; font-size: 12px; }
+.type-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.bar-track { position: relative; height: 11px; border-radius: 999px; background: #1c2530; overflow: hidden; }
+.bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--space); }
+.bar-fill.waste { background: var(--waste); }
+.bar-fill.structure { background: var(--structure); }
+.warnings { display: grid; gap: 8px; margin-top: 12px; }
+.warning { padding: 9px 11px; background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.22); border-radius: 8px; color: #e7d9aa; font-size: 12px; }
+.empty { color: var(--muted); padding: 18px 0; }
+footer { margin: 26px 0 4px; color: #607085; text-align: center; font-size: 11px; }
+@media (max-width: 1050px) { .evidence-grid { grid-template-columns: 1fr; } }
