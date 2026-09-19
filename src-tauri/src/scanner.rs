@@ -121,6 +121,21 @@ fn skip_walk_entry(path: &Path, is_dir: bool) -> bool {
     is_reparse_or_symlink(&metadata)
 }
 
+pub(crate) fn current_file_state(path: &Path) -> Result<(u64, u64, String), std::io::Error> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || is_reparse_or_symlink(&metadata) {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    let modified_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
+        .unwrap_or(0);
+    let (identity, _, _) = physical_info(path, &metadata)?;
+    Ok((metadata.len(), modified_ns, identity))
+}
+
 fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Error> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.file_type().is_file() || is_reparse_or_symlink(&metadata) {
