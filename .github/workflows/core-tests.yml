@@ -1,0 +1,21 @@
+name: Core tests
+
+on:
+  push:
+    branches:
+      - main
+      - rebuild/working-bloat-atlas
+  pull_request:
+
+jobs:
+  scanner:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Scanner tests
+        run: npm test
+      - name: Syntax checks
+        run: npm run check
