@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "Windows-first storage forensics and duplicate analysis"
 authors = ["Alkai Dynamics"]
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.85"
 
 [lib]
 name = "file_atlas_lib"
