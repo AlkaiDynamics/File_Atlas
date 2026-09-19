@@ -11,11 +11,20 @@ jobs:
   scanner:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
+      - name: Fetch exact commit without marketplace actions
+        shell: pwsh
+        run: |
+          git clone https://github.com/AlkaiDynamics/File_Atlas.git source
+          cd source
+          git checkout ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Scanner tests
-        run: npm test
+        shell: pwsh
+        run: |
+          cd source
+          node --version
+          npm test
       - name: Syntax checks
-        run: npm run check
+        shell: pwsh
+        run: |
+          cd source
+          npm run check
