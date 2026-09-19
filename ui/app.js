@@ -454,7 +454,7 @@ function renderLargeFiles(files) {
   ui.largeFiles.innerHTML = files.slice(0, 30).map((file) => `<div class="card">
     <div class="card-head">
       <strong>${bytes(file.allocatedBytes)}</strong>
-      <small>${file.stale ? "STALE > 1 YEAR" : "recent"}</small>
+      <small>${file.stale ? "STALE > 1 YEAR" : "recent"}${file.pathCount > 1 ? " · " + file.pathCount + " hardlink paths" : ""}</small>
     </div>
     <ul class="path-list"><li>${escapeHtml(file.path)}</li></ul>
   </div>`).join("") || `<div class="empty">No files over 100 MB.</div>`;
