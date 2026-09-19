@@ -2,9 +2,10 @@ use crate::cache::HashCache;
 use crate::models::{DuplicateGroup, DuplicateMember, FileRecord, ScanProgress};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 const PREHASH_CHUNK: usize = 64 * 1024;
 const FULL_HASH_CHUNK: usize = 1024 * 1024;
@@ -18,8 +19,20 @@ pub fn find_exact_duplicates<F>(
 where
     F: Fn(ScanProgress) + Sync,
 {
-    let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
+    // Hash each physical file identity once. Hardlink aliases are expanded back
+    // into evidence only after redundant physical copies have been verified.
+    let mut identity_members: HashMap<String, Vec<usize>> = HashMap::new();
     for (idx, file) in files.iter().enumerate() {
+        identity_members.entry(file.identity.clone()).or_default().push(idx);
+    }
+    let representatives: Vec<usize> = identity_members
+        .values()
+        .filter_map(|members| members.first().copied())
+        .collect();
+
+    let mut by_size: HashMap<u64, Vec<usize>> = HashMap::new();
+    for idx in representatives {
+        let file = &files[idx];
         if file.logical_bytes > 0 {
             by_size.entry(file.logical_bytes).or_default().push(idx);
         }
@@ -34,22 +47,31 @@ where
         phase: "prehash".into(),
         current: 0,
         total: Some(candidate_indices.len()),
-        message: format!("Prehashing {} size-matched files", candidate_indices.len()),
+        message: format!(
+            "Prehashing {} size-matched physical files",
+            candidate_indices.len()
+        ),
     });
 
     let prehashed: Vec<(usize, String)> = candidate_indices
         .par_iter()
         .filter_map(|idx| {
             let file = &files[*idx];
-            let cached = cache.get(&file.identity, file.logical_bytes, file.modified_ms);
+            if !record_is_current(file) {
+                return None;
+            }
+            let cached = cache.get(&file.identity, file.logical_bytes, file.modified_ns);
             if let Some(prehash) = cached.and_then(|entry| entry.prehash) {
-                return Some((*idx, prehash));
+                return record_is_current(file).then_some((*idx, prehash));
             }
             let prehash = prehash_file(Path::new(&file.path), file.logical_bytes).ok()?;
+            if !record_is_current(file) {
+                return None;
+            }
             cache.put_prehash(
                 &file.identity,
                 file.logical_bytes,
-                file.modified_ms,
+                file.modified_ns,
                 &prehash,
             );
             Some((*idx, prehash))
@@ -66,31 +88,44 @@ where
     let full_candidates: Vec<(usize, String)> = by_prehash
         .into_iter()
         .filter(|(_, indices)| indices.len() > 1)
-        .flat_map(|((_, prehash), indices)| indices.into_iter().map(move |idx| (idx, prehash.clone())))
+        .flat_map(|((_, prehash), indices)| {
+            indices
+                .into_iter()
+                .map(move |idx| (idx, prehash.clone()))
+        })
         .collect();
 
     progress(ScanProgress {
         phase: "hash".into(),
         current: 0,
         total: Some(full_candidates.len()),
-        message: format!("Cryptographically hashing {} candidates", full_candidates.len()),
+        message: format!(
+            "Cryptographically hashing {} candidates",
+            full_candidates.len()
+        ),
     });
 
     let full_hashed: Vec<(usize, String)> = full_candidates
         .par_iter()
         .filter_map(|(idx, prehash)| {
             let file = &files[*idx];
+            if !record_is_current(file) {
+                return None;
+            }
             if let Some(full_hash) = cache
-                .get(&file.identity, file.logical_bytes, file.modified_ms)
+                .get(&file.identity, file.logical_bytes, file.modified_ns)
                 .and_then(|entry| entry.full_hash)
             {
-                return Some((*idx, full_hash));
+                return record_is_current(file).then_some((*idx, full_hash));
             }
             let full_hash = full_hash_file(Path::new(&file.path)).ok()?;
+            if !record_is_current(file) {
+                return None;
+            }
             cache.put_full_hash(
                 &file.identity,
                 file.logical_bytes,
-                file.modified_ms,
+                file.modified_ns,
                 prehash,
                 &full_hash,
             );
@@ -111,12 +146,27 @@ where
     });
 
     let mut groups = Vec::new();
-    for (hash, indices) in by_hash.into_iter().filter(|(_, indices)| indices.len() > 1) {
-        for bucket in split_by_byte_identity(&indices, files) {
-            if bucket.len() < 2 {
+    for (hash, representatives) in by_hash
+        .into_iter()
+        .filter(|(_, indices)| indices.len() > 1)
+    {
+        for physical_bucket in split_by_byte_identity(&representatives, files) {
+            if physical_bucket.len() < 2 {
                 continue;
             }
-            let group = build_group(hash.clone(), &bucket, files);
+
+            let expanded: Vec<usize> = physical_bucket
+                .iter()
+                .flat_map(|idx| {
+                    identity_members
+                        .get(&files[*idx].identity)
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                })
+                .collect();
+
+            let group = build_group(hash.clone(), &expanded, files);
             mark_reclaimable(&group, files);
             groups.push(group);
         }
@@ -166,7 +216,12 @@ fn split_by_byte_identity(indices: &[usize], files: &[FileRecord]) -> Vec<Vec<us
     'outer: for idx in indices {
         for bucket in &mut buckets {
             let anchor = bucket[0];
-            if files_equal(Path::new(&files[anchor].path), Path::new(&files[*idx].path)).unwrap_or(false) {
+            if files_equal(
+                Path::new(&files[anchor].path),
+                Path::new(&files[*idx].path),
+            )
+            .unwrap_or(false)
+            {
                 bucket.push(*idx);
                 continue 'outer;
             }
@@ -177,26 +232,55 @@ fn split_by_byte_identity(indices: &[usize], files: &[FileRecord]) -> Vec<Vec<us
 }
 
 fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
-    let mut a = File::open(left)?;
-    let mut b = File::open(right)?;
-    if a.metadata()?.len() != b.metadata()?.len() {
+    let left_before = file_stamp(left)?;
+    let right_before = file_stamp(right)?;
+    if left_before.0 != right_before.0 {
         return Ok(false);
     }
+
+    let mut a = File::open(left)?;
+    let mut b = File::open(right)?;
     let mut ba = vec![0u8; VERIFY_CHUNK];
     let mut bb = vec![0u8; VERIFY_CHUNK];
-    loop {
+    let equal = loop {
         let ra = a.read(&mut ba)?;
         let rb = b.read(&mut bb)?;
         if ra != rb {
-            return Ok(false);
+            break false;
         }
         if ra == 0 {
-            return Ok(true);
+            break true;
         }
         if ba[..ra] != bb[..rb] {
-            return Ok(false);
+            break false;
         }
+    };
+
+    if !equal {
+        return Ok(false);
     }
+
+    // A file that changed while verification was in progress is not evidence.
+    let left_after = file_stamp(left)?;
+    let right_after = file_stamp(right)?;
+    Ok(left_before == left_after && right_before == right_after)
+}
+
+fn record_is_current(file: &FileRecord) -> bool {
+    file_stamp(Path::new(&file.path))
+        .map(|(size, modified_ns)| size == file.logical_bytes && modified_ns == file.modified_ns)
+        .unwrap_or(false)
+}
+
+fn file_stamp(path: &Path) -> std::io::Result<(u64, u64)> {
+    let metadata = fs::metadata(path)?;
+    let modified_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
+        .unwrap_or(0);
+    Ok((metadata.len(), modified_ns))
 }
 
 fn build_group(hash: String, indices: &[usize], files: &[FileRecord]) -> DuplicateGroup {
@@ -226,13 +310,17 @@ fn build_group(hash: String, indices: &[usize], files: &[FileRecord]) -> Duplica
         .into_iter()
         .map(|(identity, (allocated, path))| (identity, allocated, path))
         .collect();
-    physical_values.sort_by_key(|(_, allocated, path)| (*allocated, path.len()));
+    physical_values.sort_by_key(|(_, allocated, path)| (*allocated, path.clone()));
 
     let keep_path = physical_values
         .first()
         .map(|(_, _, path)| path.clone())
         .unwrap_or_default();
-    let reclaimable_bytes = physical_values.iter().skip(1).map(|(_, bytes, _)| *bytes).sum();
+    let reclaimable_bytes = physical_values
+        .iter()
+        .skip(1)
+        .map(|(_, bytes, _)| *bytes)
+        .sum();
 
     DuplicateGroup {
         hash,
@@ -253,7 +341,9 @@ fn mark_reclaimable(group: &DuplicateGroup, files: &mut [FileRecord]) {
         .map(|member| member.identity.as_str());
     let mut marked_identities = HashSet::new();
     for member in &group.members {
-        if Some(member.identity.as_str()) == keep_identity || !marked_identities.insert(member.identity.clone()) {
+        if Some(member.identity.as_str()) == keep_identity
+            || !marked_identities.insert(member.identity.clone())
+        {
             continue;
         }
         if let Some(file) = files.iter_mut().find(|file| file.path == member.path) {
@@ -270,12 +360,19 @@ mod tests {
 
     fn record(path: &Path, identity: &str) -> FileRecord {
         let metadata = fs::metadata(path).unwrap();
+        let modified_ns = metadata
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
         FileRecord {
             path: path.to_string_lossy().to_string(),
             relative_path: path.file_name().unwrap().to_string_lossy().to_string(),
             logical_bytes: metadata.len(),
             allocated_bytes: metadata.len(),
-            modified_ms: 1,
+            modified_ms: modified_ns / 1_000_000,
+            modified_ns,
             identity: identity.into(),
             link_count: 1,
             extension: ".bin".into(),
@@ -284,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn byte_verification_splits_non_identical_files() {
+    fn final_byte_verifier_splits_non_identical_files_even_inside_same_candidate_bucket() {
         let dir = tempdir().unwrap();
         let a = dir.path().join("a.bin");
         let b = dir.path().join("b.bin");
@@ -296,5 +393,15 @@ mod tests {
         let buckets = split_by_byte_identity(&[0, 1, 2], &files);
         assert_eq!(buckets.len(), 2);
         assert!(buckets.iter().any(|bucket| bucket.len() == 2));
+    }
+
+    #[test]
+    fn verifier_rejects_size_mismatch() {
+        let dir = tempdir().unwrap();
+        let a = dir.path().join("a.bin");
+        let b = dir.path().join("b.bin");
+        fs::write(&a, b"1234").unwrap();
+        fs::write(&b, b"12345").unwrap();
+        assert!(!files_equal(&a, &b).unwrap());
     }
 }
