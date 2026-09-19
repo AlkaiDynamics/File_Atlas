@@ -28,6 +28,9 @@ where
     let started = Instant::now();
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let mut inventory = collect_files(&root, &progress)?;
+    // Stable ordering makes physical-byte attribution deterministic when one
+    // physical file has hardlink paths in multiple directories.
+    inventory.files.sort_by(|a, b| a.path.cmp(&b.path));
     let cache = HashCache::open().map_err(|e| format!("Unable to open hash cache: {e}"))?;
     let duplicates = find_exact_duplicates(&mut inventory.files, &cache, &progress);
 
@@ -41,7 +44,13 @@ where
     let allocated_bytes = physical_total(&inventory.files);
     let logical_bytes = inventory.files.iter().map(|f| f.logical_bytes).sum();
     let reclaimable_bytes = duplicates.iter().map(|g| g.reclaimable_bytes).sum();
-    let hardlink_aliases = duplicates.iter().map(|g| g.hardlink_aliases).sum();
+    let unique_physical_files = inventory
+        .files
+        .iter()
+        .map(|file| file.identity.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let hardlink_aliases = inventory.files.len().saturating_sub(unique_physical_files);
     let duplicate_paths = duplicates.iter().map(|g| g.members.len()).sum();
 
     let (directory_tree, hotspots) = build_directory_views(&root, &inventory.files);
