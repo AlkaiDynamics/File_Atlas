@@ -276,3 +276,36 @@ fn production_scan_modules_have_no_user_file_mutation_primitives() {
         }
     }
 }
+
+
+#[test]
+fn file_disappearing_after_inventory_does_not_crash_or_become_duplicate_evidence() {
+    let dir = tempdir().unwrap();
+    let a = dir.path().join("a.bin");
+    let b = dir.path().join("b.bin");
+    write(&a, b"same payload");
+    write(&b, b"same payload");
+
+    let mut inventory = collect_files(dir.path(), &silent).unwrap();
+    fs::remove_file(&b).unwrap();
+
+    let cache = HashCache::open().unwrap();
+    let groups = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(groups.is_empty());
+}
+
+#[test]
+fn scan_releases_file_handles_after_analysis() {
+    let dir = tempdir().unwrap();
+    let original = dir.path().join("open-test.bin");
+    let renamed = dir.path().join("renamed.bin");
+    write(&original, b"handles must close");
+
+    let report = scan_root(dir.path(), silent).unwrap();
+    assert_eq!(report.summary.files_scanned, 1);
+
+    // This is especially important on Windows, where an accidentally retained
+    // handle can block rename/delete long after the scan finishes.
+    fs::rename(&original, &renamed).unwrap();
+    assert!(renamed.exists());
+}
