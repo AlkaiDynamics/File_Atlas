@@ -8,6 +8,8 @@ pub struct FileRecord {
     pub logical_bytes: u64,
     pub allocated_bytes: u64,
     pub modified_ms: u64,
+    #[serde(skip_serializing)]
+    pub modified_ns: u64,
     pub identity: String,
     pub link_count: u64,
     pub extension: String,
