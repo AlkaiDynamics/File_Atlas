@@ -62,7 +62,11 @@ where
 
     let mut paths = Vec::new();
     let mut unreadable = 0usize;
-    for entry in WalkDir::new(root).follow_links(false).into_iter() {
+    let walker = WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !skip_walk_entry(entry.path(), entry.file_type().is_dir()));
+    for entry in walker {
         match entry {
             Ok(entry) => {
                 if entry.file_type().is_file() {
@@ -101,6 +105,17 @@ where
         unreadable,
         warnings: Vec::new(),
     })
+}
+
+fn skip_walk_entry(path: &Path, is_dir: bool) -> bool {
+    if !is_dir {
+        return false;
+    }
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return false,
+    };
+    is_reparse_or_symlink(&metadata)
 }
 
 fn metadata_record(root: &Path, path: &Path) -> Result<FileRecord, std::io::Error> {
