@@ -53,8 +53,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Compile Windows target
+      - name: Compile default Windows target
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+      - name: Compile experimental MFT accelerator
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets --features mft-fast
       - name: Run adversarial regression suite
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
@@ -67,7 +69,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
