@@ -218,3 +218,61 @@ fn moderate_many_file_smoke_scan_has_correct_count_and_no_false_waste() {
     assert_eq!(report.summary.files_scanned, 1000);
     assert_eq!(report.summary.reclaimable_bytes, 0);
 }
+
+
+#[test]
+fn scan_rejects_missing_and_non_directory_roots() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("not-a-directory.txt");
+    write(&file, b"x");
+    let missing = dir.path().join("does-not-exist");
+
+    assert!(scan_root(&file, silent).is_err());
+    assert!(scan_root(&missing, silent).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_symlink_is_not_followed_into_external_tree() {
+    use std::os::unix::fs::symlink;
+    let scan = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    write(&outside.path().join("nested").join("outside.bin"), b"outside");
+    symlink(outside.path(), scan.path().join("external-dir")).unwrap();
+
+    let report = scan_root(scan.path(), silent).unwrap();
+    assert_eq!(report.summary.files_scanned, 0);
+}
+
+#[test]
+fn production_scan_modules_have_no_user_file_mutation_primitives() {
+    // Cache writes are intentionally isolated in cache.rs. The scanner/analyzer
+    // side of the trust boundary must remain read-only until cleanup is designed.
+    let sources = [
+        include_str!("scanner.rs"),
+        include_str!("engine.rs"),
+        include_str!("duplicates.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(""),
+    ];
+    let forbidden = [
+        "remove_file(",
+        "remove_dir(",
+        "remove_dir_all(",
+        "hard_link(",
+        "fs::write(",
+        "File::create(",
+        "OpenOptions",
+        "set_len(",
+    ];
+
+    for source in sources {
+        for token in forbidden {
+            assert!(
+                !source.contains(token),
+                "production analysis code contains forbidden mutation primitive: {token}"
+            );
+        }
+    }
+}
