@@ -61,7 +61,12 @@ where
             if !record_is_current(file) {
                 return None;
             }
-            let cached = cache.get(&file.identity, file.logical_bytes, file.modified_ns);
+            let cached = cache.get(
+                &file.identity,
+                file.logical_bytes,
+                file.modified_ns,
+                file.change_stamp,
+            );
             if let Some(prehash) = cached.and_then(|entry| entry.prehash) {
                 return record_is_current(file).then_some((*idx, prehash));
             }
@@ -73,6 +78,7 @@ where
                 &file.identity,
                 file.logical_bytes,
                 file.modified_ns,
+                file.change_stamp,
                 &prehash,
             );
             Some((*idx, prehash))
@@ -127,6 +133,7 @@ where
                 &file.identity,
                 file.logical_bytes,
                 file.modified_ns,
+                file.change_stamp,
                 prehash,
                 &full_hash,
             );
@@ -277,9 +284,10 @@ fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
 
 fn record_is_current(file: &FileRecord) -> bool {
     current_file_state(Path::new(&file.path))
-        .map(|(size, modified_ns, identity)| {
+        .map(|(size, modified_ns, change_stamp, identity)| {
             size == file.logical_bytes
                 && modified_ns == file.modified_ns
+                && change_stamp == file.change_stamp
                 && identity == file.identity
         })
         .unwrap_or(false)
@@ -410,6 +418,7 @@ mod tests {
             allocated_bytes: metadata.len(),
             modified_ms: modified_ns / 1_000_000,
             modified_ns,
+            change_stamp: 0,
             identity: identity.into(),
             link_count: 1,
             extension: ".bin".into(),
