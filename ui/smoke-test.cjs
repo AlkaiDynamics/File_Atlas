@@ -135,7 +135,7 @@ const root = {
 
 state.report = { directoryTree: root, duplicates: [] };
 state.lens = "waste";
-state.expandedPaths = new Set();
+state.expandedPaths = new Set([root.path]);
 state.dedupeScopePath = null;
 
 renderMassTree(root);
