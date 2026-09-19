@@ -1,5 +1,6 @@
 use crate::cache::HashCache;
 use crate::models::{DuplicateGroup, DuplicateMember, FileRecord, ScanProgress};
+use crate::scanner::current_file_state;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -214,13 +215,21 @@ fn full_hash_file(path: &Path) -> std::io::Result<String> {
 fn split_by_byte_identity(indices: &[usize], files: &[FileRecord]) -> Vec<Vec<usize>> {
     let mut buckets: Vec<Vec<usize>> = Vec::new();
     'outer: for idx in indices {
+        if !record_is_current(&files[*idx]) {
+            continue;
+        }
         for bucket in &mut buckets {
             let anchor = bucket[0];
+            if !record_is_current(&files[anchor]) {
+                continue;
+            }
             if files_equal(
                 Path::new(&files[anchor].path),
                 Path::new(&files[*idx].path),
             )
             .unwrap_or(false)
+                && record_is_current(&files[anchor])
+                && record_is_current(&files[*idx])
             {
                 bucket.push(*idx);
                 continue 'outer;
@@ -267,8 +276,12 @@ fn files_equal(left: &Path, right: &Path) -> std::io::Result<bool> {
 }
 
 fn record_is_current(file: &FileRecord) -> bool {
-    file_stamp(Path::new(&file.path))
-        .map(|(size, modified_ns)| size == file.logical_bytes && modified_ns == file.modified_ns)
+    current_file_state(Path::new(&file.path))
+        .map(|(size, modified_ns, identity)| {
+            size == file.logical_bytes
+                && modified_ns == file.modified_ns
+                && identity == file.identity
+        })
         .unwrap_or(false)
 }
 
