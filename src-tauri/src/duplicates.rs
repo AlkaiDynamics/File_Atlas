@@ -452,23 +452,19 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    fn record(path: &Path, identity: &str) -> FileRecord {
+    fn record(path: &Path) -> FileRecord {
         let metadata = fs::metadata(path).unwrap();
-        let modified_ns = metadata
-            .modified()
-            .unwrap()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64;
+        let (size, modified_ns, change_stamp, identity) =
+            current_file_state(path).unwrap();
         FileRecord {
             path: path.to_string_lossy().to_string(),
             relative_path: path.file_name().unwrap().to_string_lossy().to_string(),
-            logical_bytes: metadata.len(),
+            logical_bytes: size,
             allocated_bytes: metadata.len(),
             modified_ms: modified_ns / 1_000_000,
             modified_ns,
-            change_stamp: 0,
-            identity: identity.into(),
+            change_stamp,
+            identity,
             link_count: 1,
             extension: ".bin".into(),
             reclaimable_bytes: 0,
@@ -484,7 +480,7 @@ mod tests {
         fs::write(&a, b"same").unwrap();
         fs::write(&b, b"same").unwrap();
         fs::write(&c, b"diff").unwrap();
-        let files = vec![record(&a, "a"), record(&b, "b"), record(&c, "c")];
+        let files = vec![record(&a), record(&b), record(&c)];
         let incomplete = AtomicBool::new(false);
         let buckets = split_by_byte_identity(&[0, 1, 2], &files, &incomplete);
         assert!(!incomplete.load(Ordering::Relaxed));
