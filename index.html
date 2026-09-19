@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
+  <title>File Atlas</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <div class="eyebrow">LOCAL DISK INTELLIGENCE</div>
+      <h1>FILE ATLAS</h1>
+      <p>Map occupied space. Isolate exact duplicate waste. See the bloat before touching anything.</p>
+    </div>
+    <div class="scan-controls">
+      <button id="choose-folder" class="button primary">Choose folder</button>
+      <button id="scan-folder" class="button" disabled>Scan</button>
+      <button id="cancel-scan" class="button danger" hidden>Cancel</button>
+    </div>
+  </header>
+
+  <section class="path-strip">
+    <span class="label">TARGET</span>
+    <span id="target-path" class="target-path">No folder selected</span>
+  </section>
+
+  <section id="progress-panel" class="progress-panel" hidden>
+    <div class="progress-copy">
+      <strong id="progress-title">Scanning…</strong>
+      <span id="progress-detail"></span>
+    </div>
+    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+  </section>
+
+  <main>
+    <section id="empty-state" class="empty-state">
+      <div class="empty-mark">▦</div>
+      <h2>Choose a folder and build its atlas.</h2>
+      <p>The first pass maps file size, then SHA-256 hashes only same-size physical files that could actually be duplicates.</p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div class="summary-grid">
+        <article class="metric-card"><span>Physical data</span><strong id="metric-physical">—</strong><small id="metric-logical">—</small></article>
+        <article class="metric-card hot"><span>Exact duplicate waste</span><strong id="metric-waste">—</strong><small id="metric-waste-pct">—</small></article>
+        <article class="metric-card"><span>Duplicate groups</span><strong id="metric-groups">—</strong><small id="metric-files">—</small></article>
+        <article class="metric-card"><span>Hash work avoided</span><strong id="metric-cache">—</strong><small id="metric-elapsed">—</small></article>
+      </div>
+
+      <section class="panel atlas-panel">
+        <div class="panel-header map-header">
+          <div>
+            <div class="eyebrow">SPATIAL VIEW</div>
+            <h2>Where the space is</h2>
+          </div>
+          <div class="segmented" role="group" aria-label="Map metric">
+            <button class="segment active" data-map-mode="waste">Duplicate waste</button>
+            <button class="segment" data-map-mode="size">Physical size</button>
+          </div>
+        </div>
+        <div id="breadcrumbs" class="breadcrumbs"></div>
+        <div class="atlas-layout">
+          <div id="treemap" class="treemap" aria-label="Directory treemap"></div>
+          <aside class="hotspot-column">
+            <div class="subhead"><span>HOTSPOTS</span><small>ranked by exact reclaimable bytes</small></div>
+            <div id="hotspot-list" class="hotspot-list"></div>
+          </aside>
+        </div>
+        <div class="legend"><span class="legend-chip cool"></span> little/no duplicate share <span class="legend-chip hot"></span> high duplicate share</div>
+      </section>
+
+      <div class="two-column">
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">CONTENT MIX</div><h2>Space by file type</h2></div></div>
+          <div id="extension-chart" class="bar-chart"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">LARGEST OBJECTS</div><h2>Top files</h2></div></div>
+          <div id="largest-files" class="file-list"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div><div class="eyebrow">VERIFIED SHA-256 MATCHES</div><h2>Duplicate families</h2></div>
+          <div id="duplicate-count-label" class="muted"></div>
+        </div>
+        <div id="duplicate-groups" class="duplicate-groups"></div>
+        <button id="show-more-duplicates" class="button subtle" hidden>Show more</button>
+      </section>
+
+      <section id="warnings-panel" class="panel warning-panel" hidden>
+        <div class="panel-header"><div><div class="eyebrow">SCAN NOTES</div><h2>Unreadable or skipped paths</h2></div></div>
+        <div id="warnings-list" class="warning-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" hidden></div>
+  <script src="node_modules/d3/dist/d3.min.js" defer></script>
+  <script src="renderer.js" defer></script>
+</body>
+</html>

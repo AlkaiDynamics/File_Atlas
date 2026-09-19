@@ -1,0 +1,30 @@
+name: Core tests
+
+on:
+  push:
+    branches:
+      - main
+      - rebuild/working-bloat-atlas
+  pull_request:
+
+jobs:
+  scanner:
+    runs-on: windows-latest
+    steps:
+      - name: Fetch exact commit without marketplace actions
+        shell: pwsh
+        run: |
+          git clone https://github.com/AlkaiDynamics/File_Atlas.git source
+          cd source
+          git checkout ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Scanner tests
+        shell: pwsh
+        run: |
+          cd source
+          node --version
+          npm test
+      - name: Syntax checks
+        shell: pwsh
+        run: |
+          cd source
+          npm run check
