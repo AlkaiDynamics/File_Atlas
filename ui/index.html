@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File Atlas</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">STORAGE FORENSICS</div>
+        <h1>FILE ATLAS</h1>
+      </div>
+      <div class="scan-controls">
+        <button id="chooseRoot" class="secondary">Choose folder</button>
+        <button id="scanButton" class="primary">Scan</button>
+      </div>
+    </header>
+
+    <section class="root-strip">
+      <span class="muted">ROOT</span>
+      <code id="rootPath">Choose a folder to begin.</code>
+      <span id="scannerBadge" class="badge hidden"></span>
+    </section>
+
+    <section id="progressPanel" class="progress-panel hidden" aria-live="polite">
+      <div class="progress-copy">
+        <strong id="progressPhase">Preparing</strong>
+        <span id="progressMessage">Starting scan…</span>
+      </div>
+      <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    </section>
+
+    <section id="summary" class="metric-grid hidden">
+      <article class="metric">
+        <span>Physical space</span>
+        <strong id="physicalBytes">—</strong>
+        <small>Allocated bytes, hardlinks counted once</small>
+      </article>
+      <article class="metric danger">
+        <span>Verified waste</span>
+        <strong id="wasteBytes">—</strong>
+        <small>Byte-verified redundant physical copies</small>
+      </article>
+      <article class="metric">
+        <span>Logical data</span>
+        <strong id="logicalBytes">—</strong>
+        <small>Apparent file sizes across paths</small>
+      </article>
+      <article class="metric">
+        <span>Files</span>
+        <strong id="fileCount">—</strong>
+        <small id="fileSubline">—</small>
+      </article>
+    </section>
+
+    <section id="atlasSection" class="panel hidden">
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">WHERE THE BLOAT LIVES</div>
+          <h2>Atlas map</h2>
+        </div>
+        <div class="lens-switch" role="group" aria-label="Atlas metric">
+          <button class="lens active" data-lens="space">SPACE</button>
+          <button class="lens" data-lens="waste">WASTE</button>
+          <button class="lens" data-lens="structure">STRUCTURE</button>
+        </div>
+      </div>
+      <p id="lensExplanation" class="muted"></p>
+      <div class="map-wrap">
+        <svg id="treemap" viewBox="0 0 1000 460" role="img" aria-label="Directory storage map"></svg>
+        <aside id="mapDetail" class="map-detail">
+          <span class="muted">Select a tile</span>
+          <strong>Directory detail</strong>
+          <p>Tile area follows the selected lens. Waste is never inferred from folder names.</p>
+        </aside>
+      </div>
+      <div id="hotspotList" class="hotspot-list"></div>
+    </section>
+
+    <section id="evidenceGrid" class="evidence-grid hidden">
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">CERTAIN</div>
+            <h2>Exact duplicate evidence</h2>
+          </div>
+          <span id="duplicateCount" class="badge"></span>
+        </div>
+        <div id="duplicateGroups" class="stack"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">INVESTIGATE</div>
+            <h2>Candidate bloat</h2>
+          </div>
+        </div>
+        <p class="muted">These are review signals, not deletion recommendations.</p>
+        <div id="signals" class="stack"></div>
+      </article>
+    </section>
+
+    <section id="secondaryGrid" class="evidence-grid hidden">
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">COMPOSITION</div>
+            <h2>File types</h2>
+          </div>
+        </div>
+        <div id="types" class="bar-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">OUTLIERS</div>
+            <h2>Large files</h2>
+          </div>
+        </div>
+        <div id="largeFiles" class="stack"></div>
+      </article>
+    </section>
+
+    <section id="warningsPanel" class="panel hidden">
+      <div class="eyebrow">SCAN NOTES</div>
+      <div id="warnings" class="warnings"></div>
+    </section>
+
+    <footer>
+      File Atlas v2 is read-only. It analyzes; it does not delete, move, hardlink, or repair files.
+    </footer>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
