@@ -1,9 +1,13 @@
 use crate::models::{FileRecord, ScanProgress};
 use rayon::prelude::*;
+#[cfg(all(windows, feature = "mft-fast"))]
 use std::collections::HashMap;
+#[cfg(all(windows, feature = "mft-fast"))]
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(all(windows, feature = "mft-fast"))]
+use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
@@ -45,7 +49,6 @@ where
         }
     }
 
-    #[cfg(not(windows))]
     collect_walk(root, progress)
 }
 
