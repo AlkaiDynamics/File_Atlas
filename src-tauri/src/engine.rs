@@ -344,3 +344,38 @@ fn build_bloat_signals(files: &[FileRecord]) -> Vec<BloatSignal> {
     signals.sort_by_key(|signal| std::cmp::Reverse(signal.allocated_bytes));
     signals
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn synthetic_file(path: &str, identity: &str, allocated_bytes: u64) -> FileRecord {
+        FileRecord {
+            path: path.into(),
+            relative_path: path.into(),
+            logical_bytes: allocated_bytes,
+            allocated_bytes,
+            modified_ms: 0,
+            modified_ns: 0,
+            identity: identity.into(),
+            link_count: 2,
+            extension: ".bin".into(),
+            reclaimable_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn large_files_count_one_physical_identity_once() {
+        let large = 128 * 1024 * 1024;
+        let files = vec![
+            synthetic_file("a/large.bin", "same-physical-file", large),
+            synthetic_file("b/alias.bin", "same-physical-file", large),
+        ];
+
+        let result = build_large_files(&files);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].allocated_bytes, large);
+        assert_eq!(result[0].path_count, 2);
+    }
+}
