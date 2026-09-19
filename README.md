@@ -13,8 +13,8 @@ The application is intentionally read-only at this stage. It does not delete, mo
 
 - **Tauri 2** desktop shell with a static, dependency-light frontend.
 - **Rust** scanning and analysis core.
-- **NTFS MFT fast path on Windows** using `usn-journal-rs` when the selected path is on a drive-letter volume and the process has the required privileges.
-- **Safe recursive fallback** via `walkdir`.
+- **Safe recursive traversal by default** via `walkdir`, with symlink/reparse-directory pruning.
+- **Experimental NTFS MFT accelerator** behind the `mft-fast` feature; it is not enabled in the release build until hardlink-name completeness is verified.
 - **Physical file identity** so hardlinks do not masquerade as duplicate physical storage.
 - **Allocated bytes and logical bytes tracked separately.**
 - **Persistent SQLite hash cache** in the OS cache directory.
@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-On Windows, running elevated lets File Atlas attempt the NTFS MFT accelerator. If unavailable, it automatically falls back to normal traversal and reports which scanner was used.
+The default desktop build always uses the completeness-first walker. The experimental MFT accelerator can be compiled with `--features mft-fast`, but is deliberately excluded from the release path for now.
 
 ## Tests
 
@@ -61,3 +61,18 @@ Pattern-based signals such as dependency trees, caches, build outputs, and backu
 ## Next hardening layer
 
 The scanner interface is separated from analysis so USN Change Journal incremental refresh can be added without changing duplicate semantics or the evidence model. Cleanup actions should only be added behind a second trust boundary with re-stat/reverify checks, Recycle Bin or quarantine defaults, audit logging, and undo where supported.
+
+
+## Current visualization
+
+The v2 reference renderer is an expandable **hierarchical visual-mass list**. Each row represents a directory branch and carries a proportional bar under three interchangeable lenses:
+
+- **SPACE** — allocated physical bytes.
+- **WASTE** — byte-verified reclaimable duplicate allocation.
+- **STRUCTURE** — logical path size.
+
+This is intentionally the boring/correct renderer. A future infinite-canvas tree can use branch thickness and node size as visual mass while consuming the same evidence model.
+
+## Validation
+
+See [TESTING.md](TESTING.md) for the automated adversarial suite, manual Windows torture pass, and release gate.
