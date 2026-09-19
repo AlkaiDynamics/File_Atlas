@@ -80,6 +80,7 @@ pub struct LargeFile {
     pub logical_bytes: u64,
     pub modified_ms: u64,
     pub stale: bool,
+    pub path_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
