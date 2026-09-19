@@ -125,6 +125,7 @@ fn stale_inventory_record_is_rejected_after_file_changes() {
 
     let cache = HashCache::open().unwrap();
     let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(analysis.incomplete);
     let groups = analysis.groups;
     assert!(groups.is_empty(), "changed files must not survive a stale metadata snapshot");
 }
@@ -292,6 +293,7 @@ fn file_disappearing_after_inventory_does_not_crash_or_become_duplicate_evidence
 
     let cache = HashCache::open().unwrap();
     let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(analysis.incomplete);
     let groups = analysis.groups;
     assert!(groups.is_empty());
 }
@@ -400,6 +402,7 @@ fn replacement_with_same_size_and_timestamp_is_rejected_by_identity() {
 
     let cache = HashCache::open().unwrap();
     let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(analysis.incomplete);
     let groups = analysis.groups;
     assert!(
         groups.is_empty(),
@@ -429,6 +432,7 @@ fn same_identity_rewrite_with_restored_mtime_is_rejected() {
 
     let cache = HashCache::open().unwrap();
     let analysis = find_exact_duplicates(&mut inventory.files, &cache, &silent);
+    assert!(analysis.incomplete);
     let groups = analysis.groups;
     assert!(
         groups.is_empty(),
