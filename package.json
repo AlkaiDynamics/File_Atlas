@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "check:ui": "node --check ui/app.js"
+    "check:ui": "node --check ui/app.js && node ui/smoke-test.cjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.4"
