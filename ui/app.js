@@ -1,8 +1,16 @@
 const state = {
   root: null,
   report: null,
-  lens: "space",
+  lens: "waste",
   scanning: false,
+  expandedPaths: new Set(),
+  dedupeScopePath: null,
+  dedupeFilters: {
+    family: "all",
+    minWaste: 0,
+    minCopies: 2,
+    path: "",
+  },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +36,12 @@ const ui = {
   secondaryGrid: $("secondaryGrid"),
   duplicateCount: $("duplicateCount"),
   duplicateGroups: $("duplicateGroups"),
+  familyFilter: $("familyFilter"),
+  minWasteFilter: $("minWasteFilter"),
+  copyFilter: $("copyFilter"),
+  pathFilter: $("pathFilter"),
+  clearDedupeFilters: $("clearDedupeFilters"),
+  dedupeScope: $("dedupeScope"),
   signals: $("signals"),
   types: $("types"),
   largeFiles: $("largeFiles"),
@@ -146,7 +160,9 @@ function renderReport(report) {
   ui.logicalBytes.textContent = bytes(s.logicalBytes);
   ui.fileCount.textContent = number(s.filesScanned);
   ui.fileSubline.textContent = `${number(s.duplicateGroups)} exact groups · ${number(s.hardlinkAliases)} hardlink aliases · ${(s.elapsedMs / 1000).toFixed(1)}s`;
-  ui.duplicateCount.textContent = `${bytes(s.reclaimableBytes)} reclaimable`;
+  state.expandedPaths = new Set([report.directoryTree.path]);
+  state.dedupeScopePath = null;
+  syncDedupeControls();
 
   renderAtlas();
   renderDuplicates(report.duplicates);
@@ -168,10 +184,10 @@ function renderAtlas() {
 }
 
 function renderMassTree(root) {
-  const expanded = new Set([root.path]);
+  if (!state.expandedPaths.size) state.expandedPaths.add(root.path);
   const render = () => {
     const rows = [];
-    flattenVisible(root, 0, expanded, rows);
+    flattenVisible(root, 0, state.expandedPaths, rows);
     ui.massTree.innerHTML = "";
     const barClass = state.lens === "waste" ? "waste" : state.lens === "structure" ? "structure" : "";
     for (const { node, depth } of rows) {
@@ -185,7 +201,7 @@ function renderMassTree(root) {
       const hasChildren = Array.isArray(node.children) && node.children.length > 0;
       row.innerHTML = `
         <div class="mass-path" style="padding-left:${depth * 16}px">
-          ${hasChildren ? `<button class="mass-toggle" aria-label="Toggle folder">${expanded.has(node.path) ? "▾" : "▸"}</button>` : '<span class="leaf-pad"></span>'}
+          ${hasChildren ? `<button class="mass-toggle" aria-label="Toggle folder">${state.expandedPaths.has(node.path) ? "▾" : "▸"}</button>` : '<span class="leaf-pad"></span>'}
           <span class="mass-name" title="${escapeHtml(node.path)}">${escapeHtml(node.name || node.path)}</span>
         </div>
         <div class="mass-bar-track">
@@ -197,7 +213,7 @@ function renderMassTree(root) {
       `;
       if (hasChildren) {
         row.querySelector(".mass-toggle").addEventListener("click", () => {
-          if (expanded.has(node.path)) expanded.delete(node.path);
+          if (state.expandedPaths.has(node.path)) expanded.delete(node.path);
           else expanded.add(node.path);
           render();
         });
@@ -210,7 +226,7 @@ function renderMassTree(root) {
 
 function flattenVisible(node, depth, expanded, output) {
   output.push({ node, depth });
-  if (!expanded.has(node.path)) return;
+  if (!state.expandedPaths.has(node.path)) return;
   const children = [...(node.children || [])].sort((a, b) => metricFor(b) - metricFor(a));
   for (const child of children) flattenVisible(child, depth + 1, expanded, output);
 }
@@ -226,19 +242,103 @@ function findParent(root, path) {
 }
 
 function renderDuplicates(groups) {
-  ui.duplicateGroups.innerHTML = groups.slice(0, 60).map((group, index) => {
+  const filtered = groups
+    .filter(groupMatchesFilters)
+    .sort((a, b) => b.reclaimableBytes - a.reclaimableBytes);
+  const filteredWaste = filtered.reduce((sum, group) => sum + group.reclaimableBytes, 0);
+  const totalWaste = groups.reduce((sum, group) => sum + group.reclaimableBytes, 0);
+  ui.duplicateCount.textContent = filtered.length === groups.length
+    ? `${bytes(totalWaste)} · ${number(groups.length)} groups`
+    : `${bytes(filteredWaste)} · ${number(filtered.length)}/${number(groups.length)} groups`;
+
+  ui.duplicateGroups.innerHTML = filtered.slice(0, 100).map((group, index) => {
     const members = group.members.map((member) => {
       const keep = member.path === group.keepPath;
       return `<li class="${keep ? "keep" : "redundant"}">${escapeHtml(member.path)}${member.linkCount > 1 ? ` · ${member.linkCount} links` : ""}</li>`;
     }).join("");
-    return `<div class="card">
+    return `<div class="card duplicate-card">
       <div class="card-head">
         <strong>#${index + 1} · ${bytes(group.reclaimableBytes)} reclaimable</strong>
-        <small>${group.physicalCopies} physical · ${group.hardlinkAliases} aliases</small>
+        <small>${group.physicalCopies} physical · ${group.hardlinkAliases} aliases · ${bytes(group.logicalBytesEach)} each</small>
       </div>
       <ul class="path-list">${members}</ul>
     </div>`;
-  }).join("") || `<div class="empty">No exact duplicate physical waste found.</div>`;
+  }).join("") || `<div class="empty">No exact duplicate groups match the current targeting controls.</div>`;
+}
+
+function groupMatchesFilters(group) {
+  if (group.reclaimableBytes < state.dedupeFilters.minWaste) return false;
+  if (group.physicalCopies < state.dedupeFilters.minCopies) return false;
+
+  const paths = group.members.map((member) => member.path);
+  const pathNeedle = state.dedupeFilters.path.trim().toLocaleLowerCase();
+  if (pathNeedle && !paths.some((path) => path.toLocaleLowerCase().includes(pathNeedle))) return false;
+
+  if (state.dedupeScopePath) {
+    const scope = normalizedPath(state.dedupeScopePath);
+    if (!paths.some((path) => {
+      const candidate = normalizedPath(path);
+      return candidate === scope || candidate.startsWith(scope + "/");
+    })) return false;
+  }
+
+  if (state.dedupeFilters.family !== "all") {
+    if (!paths.some((path) => fileFamily(path) === state.dedupeFilters.family)) return false;
+  }
+  return true;
+}
+
+function normalizedPath(path) {
+  return String(path).replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase();
+}
+
+function fileFamily(path) {
+  const clean = String(path).toLocaleLowerCase().split(/[?#]/)[0];
+  const dot = clean.lastIndexOf(".");
+  const ext = dot >= 0 ? clean.slice(dot) : "";
+  const families = {
+    media: new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".raw", ".dng", ".tif", ".tiff", ".bmp", ".svg", ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mp3", ".wav", ".flac", ".aac", ".m4a", ".ogg"]),
+    documents: new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".md", ".csv", ".epub"]),
+    archives: new Set([".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".zst", ".iso"]),
+    installers: new Set([".exe", ".msi", ".msix", ".appx", ".appxbundle", ".cab"]),
+    developer: new Set([".js", ".jsx", ".ts", ".tsx", ".py", ".rs", ".go", ".java", ".class", ".jar", ".dll", ".pdb", ".obj", ".o", ".so", ".dylib", ".wasm", ".map", ".lock"]),
+  };
+  for (const [family, extensions] of Object.entries(families)) {
+    if (extensions.has(ext)) return family;
+  }
+  return "other";
+}
+
+function syncDedupeControls() {
+  ui.familyFilter.value = state.dedupeFilters.family;
+  ui.minWasteFilter.value = String(state.dedupeFilters.minWaste);
+  ui.copyFilter.value = String(state.dedupeFilters.minCopies);
+  ui.pathFilter.value = state.dedupeFilters.path;
+  renderDedupeScope();
+}
+
+function renderDedupeScope() {
+  if (!state.dedupeScopePath) {
+    ui.dedupeScope.classList.add("hidden");
+    ui.dedupeScope.innerHTML = "";
+    return;
+  }
+  ui.dedupeScope.classList.remove("hidden");
+  ui.dedupeScope.innerHTML = `Branch scope: <strong>${escapeHtml(state.dedupeScopePath)}</strong> <button id="clearScope" class="scope-clear">×</button>`;
+  $("clearScope")?.addEventListener("click", () => {
+    state.dedupeScopePath = null;
+    renderDedupeScope();
+    renderDuplicates(state.report?.duplicates || []);
+    renderAtlas();
+  });
+}
+
+function refreshDedupeFilters() {
+  state.dedupeFilters.family = ui.familyFilter.value;
+  state.dedupeFilters.minWaste = Number(ui.minWasteFilter.value) || 0;
+  state.dedupeFilters.minCopies = Number(ui.copyFilter.value) || 2;
+  state.dedupeFilters.path = ui.pathFilter.value || "";
+  renderDuplicates(state.report?.duplicates || []);
 }
 
 function renderSignals(signals) {
@@ -302,6 +402,17 @@ document.querySelectorAll(".lens").forEach((button) => {
 
 ui.chooseRoot.addEventListener("click", chooseRoot);
 ui.scanButton.addEventListener("click", scan);
+ui.familyFilter.addEventListener("change", refreshDedupeFilters);
+ui.minWasteFilter.addEventListener("change", refreshDedupeFilters);
+ui.copyFilter.addEventListener("change", refreshDedupeFilters);
+ui.pathFilter.addEventListener("input", refreshDedupeFilters);
+ui.clearDedupeFilters.addEventListener("click", () => {
+  state.dedupeFilters = { family: "all", minWaste: 0, minCopies: 2, path: "" };
+  state.dedupeScopePath = null;
+  syncDedupeControls();
+  renderDuplicates(state.report?.duplicates || []);
+  renderAtlas();
+});
 setScanning(false);
 
 if (window.__TAURI__?.event?.listen) {
