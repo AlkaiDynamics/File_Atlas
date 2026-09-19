@@ -20,30 +20,40 @@ impl HashCache {
             let _ = fs::create_dir_all(parent);
         }
         let conn = Connection::open(path)?;
+        Self::from_connection(conn)
+    }
+
+    pub fn memory() -> rusqlite::Result<Self> {
+        Self::from_connection(Connection::open_in_memory()?)
+    }
+
+    fn from_connection(conn: Connection) -> rusqlite::Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS hash_cache (
+            "CREATE TABLE IF NOT EXISTS hash_cache_v2 (
                 identity TEXT NOT NULL,
                 size INTEGER NOT NULL,
-                modified_ms INTEGER NOT NULL,
+                modified_ns INTEGER NOT NULL,
                 prehash TEXT,
                 full_hash TEXT,
-                PRIMARY KEY(identity, size, modified_ms)
+                PRIMARY KEY(identity, size, modified_ns)
             );
-            CREATE INDEX IF NOT EXISTS idx_hash_cache_lookup
-            ON hash_cache(identity, size, modified_ms);",
+            CREATE INDEX IF NOT EXISTS idx_hash_cache_v2_lookup
+            ON hash_cache_v2(identity, size, modified_ns);",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
-    pub fn get(&self, identity: &str, size: u64, modified_ms: u64) -> Option<CachedHashes> {
+    pub fn get(&self, identity: &str, size: u64, modified_ns: u64) -> Option<CachedHashes> {
         self.conn
             .lock()
             .query_row(
-                "SELECT prehash, full_hash FROM hash_cache
-                 WHERE identity = ?1 AND size = ?2 AND modified_ms = ?3",
-                params![identity, size as i64, modified_ms as i64],
+                "SELECT prehash, full_hash FROM hash_cache_v2
+                 WHERE identity = ?1 AND size = ?2 AND modified_ns = ?3",
+                params![identity, size as i64, modified_ns as i64],
                 |row| {
                     Ok(CachedHashes {
                         prehash: row.get(0)?,
@@ -56,13 +66,13 @@ impl HashCache {
             .flatten()
     }
 
-    pub fn put_prehash(&self, identity: &str, size: u64, modified_ms: u64, prehash: &str) {
+    pub fn put_prehash(&self, identity: &str, size: u64, modified_ns: u64, prehash: &str) {
         let _ = self.conn.lock().execute(
-            "INSERT INTO hash_cache(identity, size, modified_ms, prehash)
+            "INSERT INTO hash_cache_v2(identity, size, modified_ns, prehash)
              VALUES(?1, ?2, ?3, ?4)
-             ON CONFLICT(identity, size, modified_ms)
+             ON CONFLICT(identity, size, modified_ns)
              DO UPDATE SET prehash = excluded.prehash",
-            params![identity, size as i64, modified_ms as i64, prehash],
+            params![identity, size as i64, modified_ns as i64, prehash],
         );
     }
 
@@ -70,16 +80,16 @@ impl HashCache {
         &self,
         identity: &str,
         size: u64,
-        modified_ms: u64,
+        modified_ns: u64,
         prehash: &str,
         full_hash: &str,
     ) {
         let _ = self.conn.lock().execute(
-            "INSERT INTO hash_cache(identity, size, modified_ms, prehash, full_hash)
+            "INSERT INTO hash_cache_v2(identity, size, modified_ns, prehash, full_hash)
              VALUES(?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(identity, size, modified_ms)
+             ON CONFLICT(identity, size, modified_ns)
              DO UPDATE SET prehash = excluded.prehash, full_hash = excluded.full_hash",
-            params![identity, size as i64, modified_ms as i64, prehash, full_hash],
+            params![identity, size as i64, modified_ns as i64, prehash, full_hash],
         );
     }
 }
@@ -87,11 +97,15 @@ impl HashCache {
 fn cache_path() -> PathBuf {
     #[cfg(windows)]
     if let Ok(base) = std::env::var("LOCALAPPDATA") {
-        return PathBuf::from(base).join("FileAtlas").join("hash-cache.sqlite3");
+        return PathBuf::from(base)
+            .join("FileAtlas")
+            .join("hash-cache.sqlite3");
     }
 
     if let Ok(base) = std::env::var("XDG_CACHE_HOME") {
-        return PathBuf::from(base).join("file-atlas").join("hash-cache.sqlite3");
+        return PathBuf::from(base)
+            .join("file-atlas")
+            .join("hash-cache.sqlite3");
     }
     if let Ok(home) = std::env::var("HOME") {
         return PathBuf::from(home)
@@ -100,4 +114,31 @@ fn cache_path() -> PathBuf {
             .join("hash-cache.sqlite3");
     }
     std::env::temp_dir().join("file-atlas-hash-cache.sqlite3")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nanosecond_cache_keys_do_not_collide() {
+        let cache = HashCache::memory().unwrap();
+        cache.put_full_hash("identity", 123, 1_000_000_001, "pre-a", "full-a");
+        cache.put_full_hash("identity", 123, 1_000_000_002, "pre-b", "full-b");
+
+        assert_eq!(
+            cache
+                .get("identity", 123, 1_000_000_001)
+                .and_then(|entry| entry.full_hash)
+                .as_deref(),
+            Some("full-a")
+        );
+        assert_eq!(
+            cache
+                .get("identity", 123, 1_000_000_002)
+                .and_then(|entry| entry.full_hash)
+                .as_deref(),
+            Some("full-b")
+        );
+    }
 }
