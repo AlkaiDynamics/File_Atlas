@@ -171,35 +171,22 @@ fn collect_hotspots(node: &DirAccumulator, out: &mut Vec<DirectoryHotspot>) {
 }
 
 fn to_node(mut acc: DirAccumulator, depth: usize) -> DirectoryNode {
-    const MAX_CHILDREN: usize = 18;
-    const MAX_DEPTH: usize = 7;
     let mut children: Vec<DirAccumulator> = std::mem::take(&mut acc.children).into_values().collect();
-    children.sort_by_key(|child| std::cmp::Reverse((child.allocated_bytes, child.reclaimable_bytes)));
+    children.sort_by_key(|child| {
+        std::cmp::Reverse((
+            child.reclaimable_bytes,
+            child.allocated_bytes,
+            child.logical_bytes,
+        ))
+    });
 
-    let mut visible = Vec::new();
-    if depth < MAX_DEPTH {
-        let overflow = if children.len() > MAX_CHILDREN {
-            Some(children.split_off(MAX_CHILDREN))
-        } else {
-            None
-        };
-        visible.extend(children.into_iter().map(|child| to_node(child, depth + 1)));
-        if let Some(rest) = overflow {
-            let mut other = DirAccumulator {
-                name: "[other]".into(),
-                path: format!("{}{}[other]", acc.path, std::path::MAIN_SEPARATOR),
-                ..Default::default()
-            };
-            for child in rest {
-                other.logical_bytes = other.logical_bytes.saturating_add(child.logical_bytes);
-                other.allocated_bytes = other.allocated_bytes.saturating_add(child.allocated_bytes);
-                other.reclaimable_bytes = other.reclaimable_bytes.saturating_add(child.reclaimable_bytes);
-                other.file_count += child.file_count;
-                other.duplicate_file_count += child.duplicate_file_count;
-            }
-            visible.push(to_node(other, depth + 1));
-        }
-    }
+    // Preserve the complete directory hierarchy in the evidence model.
+    // Rendering limits belong in the UI; synthesizing "[other]" nodes here
+    // makes path-scoped dedupe queries lossy and potentially misleading.
+    let visible = children
+        .into_iter()
+        .map(|child| to_node(child, depth.saturating_add(1)))
+        .collect();
 
     DirectoryNode {
         name: std::mem::take(&mut acc.name),
