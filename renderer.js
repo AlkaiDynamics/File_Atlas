@@ -18,6 +18,12 @@ const progressPanel = $('#progress-panel');
 const progressBar = $('#progress-bar');
 const tooltip = $('#tooltip');
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
@@ -134,7 +140,7 @@ function heatColor(node) {
 function showTooltip(event, item) {
   const node = item.node || state.currentNode;
   const ratio = node.totalPhysicalBytes ? (node.totalWasteBytes / node.totalPhysicalBytes) * 100 : 0;
-  tooltip.innerHTML = `<strong>${item.name}</strong><br>${formatBytes(node.totalPhysicalBytes)} physical<br>${formatBytes(node.totalWasteBytes)} exact duplicate waste (${ratio.toFixed(1)}%)<br>${node.fileCount.toLocaleString()} files`;
+  tooltip.innerHTML = `<strong>${escapeHtml(item.name)}</strong><br>${formatBytes(node.totalPhysicalBytes)} physical<br>${formatBytes(node.totalWasteBytes)} exact duplicate waste (${ratio.toFixed(1)}%)<br>${node.fileCount.toLocaleString()} files`;
   tooltip.hidden = false;
   const x = Math.min(window.innerWidth - 380, event.clientX + 14);
   const y = Math.min(window.innerHeight - 120, event.clientY + 14);
@@ -216,7 +222,7 @@ function renderHotspots() {
   rows.forEach((row) => {
     const button = document.createElement('button');
     button.className = 'hotspot';
-    button.innerHTML = `<strong>${row.name}</strong><span>${formatBytes(row.wasteBytes)} reclaimable · ${formatBytes(row.physicalBytes)} physical</span>`;
+    button.innerHTML = `<strong>${escapeHtml(row.name)}</strong><span>${formatBytes(row.wasteBytes)} reclaimable · ${formatBytes(row.physicalBytes)} physical</span>`;
     button.title = row.path;
     button.addEventListener('click', () => {
       const node = state.nodeByPath.get(row.path);
@@ -239,7 +245,7 @@ function renderExtensions() {
     wrapper.className = 'bar-row';
     const totalPct = (row.physicalBytes / max) * 100;
     const wastePct = row.physicalBytes ? (row.wasteBytes / row.physicalBytes) * totalPct : 0;
-    wrapper.innerHTML = `<div class="bar-label" title="${row.extension}">${row.extension}</div><div class="bar-track"><div class="bar-total" style="width:${totalPct}%"></div><div class="bar-waste" style="width:${wastePct}%"></div></div><div class="bar-value">${formatBytes(row.physicalBytes)}</div>`;
+    wrapper.innerHTML = `<div class="bar-label" title="${escapeHtml(row.extension)}">${escapeHtml(row.extension)}</div><div class="bar-track"><div class="bar-total" style="width:${totalPct}%"></div><div class="bar-waste" style="width:${wastePct}%"></div></div><div class="bar-value">${formatBytes(row.physicalBytes)}</div>`;
     chart.appendChild(wrapper);
   });
 }
@@ -253,7 +259,7 @@ function renderLargestFiles() {
     const main = document.createElement('div');
     main.className = 'file-main';
     const duplicateMark = file.duplicateGroupId ? '<span class="duplicate-dot" title="Part of an exact duplicate group">●</span>' : '';
-    main.innerHTML = `<strong>${file.name}${duplicateMark}</strong><small>${file.path}</small>`;
+    main.innerHTML = `<strong>${escapeHtml(file.name)}${duplicateMark}</strong><small>${escapeHtml(file.path)}</small>`;
     const size = document.createElement('div');
     size.className = 'file-size';
     size.textContent = formatBytes(file.size);
@@ -279,7 +285,7 @@ function renderDuplicates() {
     const summary = document.createElement('summary');
     const title = document.createElement('div');
     title.className = 'duplicate-title';
-    title.innerHTML = `<strong>${group.sampleName}</strong><small>${formatBytes(group.size)} each · ${group.physicalCopies} physical copies · ${group.pathCount} paths</small>`;
+    title.innerHTML = `<strong>${escapeHtml(group.sampleName)}</strong><small>${formatBytes(group.size)} each · ${group.physicalCopies} physical copies · ${group.pathCount} paths</small>`;
     const reclaim = document.createElement('div');
     reclaim.className = 'reclaim';
     reclaim.textContent = `${formatBytes(group.reclaimableBytes)} waste`;
@@ -378,7 +384,7 @@ scanButton.addEventListener('click', async () => {
     if (!String(error?.message || error).toLowerCase().includes('cancel')) {
       $('#empty-state').hidden = false;
       $('#dashboard').hidden = true;
-      $('#empty-state').innerHTML = `<div class="empty-mark">!</div><h2>Scan failed.</h2><p>${String(error?.message || error)}</p>`;
+      $('#empty-state').innerHTML = `<div class="empty-mark">!</div><h2>Scan failed.</h2><p>${escapeHtml(String(error?.message || error))}</p>`;
     }
   } finally {
     setScanning(false);
